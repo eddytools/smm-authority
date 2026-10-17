@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
-import { api, type FeedItem, type ItemStatus, type Source, type SourceType, type Venture } from "../api";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, ApiError, type FeedItem, type ItemStatus, type Source, type SourceType, type Venture } from "../api";
 
 type Tab = "new" | "saved" | "dismissed";
 
@@ -20,6 +20,7 @@ function ago(iso: string): string {
 
 export default function VentureFeed() {
   const vid = Number(useParams().id);
+  const navigate = useNavigate();
   const [venture, setVenture] = useState<Venture | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [items, setItems] = useState<FeedItem[] | null>(null);
@@ -82,6 +83,18 @@ export default function VentureFeed() {
       await loadItems();
     });
     setBusy(null);
+  }
+
+  async function replyTo(item: FeedItem) {
+    await run(async () => {
+      try {
+        await api.draftReply(vid, { platform: "reddit", feed_item_id: item.id });
+        navigate(`/ventures/${vid}/replies`);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) navigate(`/ventures/${vid}/replies`); // already drafted: take them to it
+        else throw e;
+      }
+    });
   }
 
   async function mark(item: FeedItem, status: ItemStatus) {
@@ -175,6 +188,9 @@ export default function VentureFeed() {
               <span>{ago(item.published_at)}</span>
               {item.engagement > 0 && <span>{item.engagement} engagement</span>}
               <span className="spacer" />
+              {(item.source_type === "reddit" || item.title.includes("?")) && tab === "new" && (
+                <button className="ghost" onClick={() => replyTo(item)} title="Draft a helpful reply you can post yourself">Draft a reply</button>
+              )}
               {tab !== "saved" && <button className="ghost" onClick={() => mark(item, "saved")}>Save</button>}
               {tab !== "dismissed" ? (
                 <button className="ghost" onClick={() => mark(item, "dismissed")}>Dismiss</button>

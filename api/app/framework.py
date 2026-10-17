@@ -151,3 +151,17 @@ PLATFORM_STYLE: dict[str, str] = {
     "blog": "Blog article draft: a headline, a one-paragraph intro, 3-5 section headings each with a short outline of the point, and a closing takeaway.",
     "newsletter": "Newsletter edition: a subject line, a personal opening, one main idea developed in 3-4 short paragraphs, and one call to action.",
 }
+
+
+# --- quick replies (PRD F10) -------------------------------------------------------
+
+REPLY_PLATFORMS = ("reddit", "linkedin", "x")
+REPLY_LIMIT = {"x": 280, "linkedin": 1250}  # LinkedIn comments are capped well below posts
+REPLY_STYLE = {
+    "reddit": "A Reddit comment. Conversational and genuinely helpful, written like a knowledgeable community member and not a brand. "
+    "Answer the question in the first sentence or two, then give the reasoning or a concrete example. 80-250 words. No headings, no emoji, "
+    "no sales language, no links, no signature.",
+    "linkedin": "A LinkedIn comment on someone else's post. 1-4 sentences that add something specific (an example, a counterpoint, a useful detail). "
+    "No pitch, no link, no 'great post!' filler.",
+    "x": "A reply on X. 280 characters or fewer. Add one specific, useful point. No hashtags, no link, no pitch.",
+}

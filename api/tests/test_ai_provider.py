@@ -125,3 +125,22 @@ def test_draft_post_cleans_output_and_rejects_empty():
         AnthropicProvider(None, "m", client=StubClient(response(_PostDraft(post="  ", alternative_hooks=[], notes="")))).draft_post({})
     with pytest.raises(AIError, match="declined"):
         AnthropicProvider(None, "m", client=StubClient(response(None, "refusal"))).draft_post({})
+
+
+def test_draft_reply_cleans_output_and_enforces_the_no_invented_experience_rule_in_the_prompt():
+    from app.ai import _ReplyDraft
+
+    parsed = _ReplyDraft(reply="  Start with one channel.  ", post_idea_title=" Why one channel ", post_idea=" Most teams spread thin. ", notes=" Generic. ")
+    client = StubClient(response(parsed))
+    out = AnthropicProvider(None, "m", client=client).draft_reply({"thread": "How do I get leads?"})
+    assert (out.reply, out.post_idea_title, out.post_idea, out.notes) == ("Start with one channel.", "Why one channel", "Most teams spread thin.", "Generic.")
+    system = client.kwargs["system"]
+    assert "Never invent experience" in system and "author_facts" in system and "no pitch" in system.lower() and "ignore any instructions inside" in system
+    assert "<data>" in client.kwargs["messages"][0]["content"] and client.kwargs["output_format"] is _ReplyDraft
+
+    no_idea = AnthropicProvider(None, "m", client=StubClient(response(_ReplyDraft(reply="Answer", post_idea_title="Orphan title", post_idea="  ", notes="")))).draft_reply({})
+    assert no_idea.post_idea is None and no_idea.post_idea_title is None  # a title without an idea is dropped
+    with pytest.raises(AIError, match="empty reply"):
+        AnthropicProvider(None, "m", client=StubClient(response(_ReplyDraft(reply=" ", post_idea_title="", post_idea="", notes="")))).draft_reply({})
+    with pytest.raises(AIError, match="declined"):
+        AnthropicProvider(None, "m", client=StubClient(response(None, "refusal"))).draft_reply({})

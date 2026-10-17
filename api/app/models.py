@@ -73,6 +73,7 @@ class Venture(Base):
     sources: Mapped[list["Source"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
     plan_slots: Mapped[list["PlanSlot"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
     connections: Mapped[list["Connection"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
+    quick_replies: Mapped[list["QuickReply"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
 
     @property
     def owner_email(self) -> str:
@@ -290,3 +291,37 @@ class OAuthAttempt(Base):
     platform: Mapped[str] = mapped_column(String(20))
     code_verifier: Mapped[str | None] = mapped_column(String(200), default=None)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class QuickReply(Base):
+    """A drafted reply to someone else's thread or post. Never posted by the app: the author copies it and posts it themselves."""
+
+    __tablename__ = "quick_replies"
+    __table_args__ = (UniqueConstraint("venture_id", "source_key", name="uq_reply_venture_source"), {"sqlite_autoincrement": True})
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    community: Mapped[str | None] = mapped_column(String(100), default=None)
+    source_url: Mapped[str | None] = mapped_column(String(1000), default=None)
+    source_key: Mapped[str | None] = mapped_column(String(64), default=None)  # hash of the normalised URL: one draft per thread
+    feed_item_id: Mapped[int | None] = mapped_column(ForeignKey("feed_items.id", ondelete="SET NULL"), default=None)
+    question_text: Mapped[str] = mapped_column(Text)
+    community_rules: Mapped[str | None] = mapped_column(Text, default=None)
+    reply_draft: Mapped[str] = mapped_column(Text)
+    post_idea_title: Mapped[str | None] = mapped_column(String(200), default=None)
+    post_idea: Mapped[str | None] = mapped_column(Text, default=None)
+    notes: Mapped[str | None] = mapped_column(String(500), default=None)
+    promo_terms: Mapped[list] = mapped_column(JSON, default=list)  # identifies the author's own business when checking the draft
+    status: Mapped[str] = mapped_column(String(12), default="open")  # open | posted | dismissed
+    plan_slot_id: Mapped[int | None] = mapped_column(ForeignKey("plan_slots.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    venture: Mapped[Venture] = relationship(back_populates="quick_replies")
+
+    @property
+    def warnings(self) -> list[str]:
+        from app.replies import check_reply, parse_rules
+
+        return check_reply(self.platform, self.reply_draft, parse_rules(self.community_rules), self.promo_terms or [])

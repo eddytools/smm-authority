@@ -154,3 +154,15 @@ button.hook { font-size: .8rem; text-align: left; max-width: 100%; }
 .mixbar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: var(--border); }
 .mixbar i { display: block; height: 100%; } .mixbar .tofu { background: var(--tofu); } .mixbar .mofu { background: var(--mofu); } .mixbar .bofu { background: var(--bofu); }
 @media (max-width: 560px) { .bar-row { grid-template-columns: 100px 1fr 60px; } }
+
+.reply-card { border-top: 1px solid var(--border); padding: 1rem 0; }
+.reply-card:first-of-type { border-top: 0; }
+.reply-card textarea { min-height: 150px; }
+.q { background: var(--bg); border-left: 3px solid var(--border); padding: .4rem .7rem; font-size: .88rem; color: var(--muted); white-space: pre-wrap; max-height: 9rem; overflow: auto; }
+.opp { display: flex; gap: .7rem; align-items: center; padding: .5rem 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.opp:first-of-type { border-top: 0; }
+.opp .t { flex: 1; min-width: 220px; }
+.idea { background: var(--ok-bg); border-radius: 8px; padding: .6rem .8rem; margin-top: .6rem; }
+.idea h5 { margin: 0 0 .2rem; }
+.warn-list { margin: .3rem 0 .6rem; padding: .5rem .8rem .5rem 1.6rem; background: var(--mofu-bg); border-radius: 7px; font-size: .86rem; }
+.stop { border-left: 4px solid var(--bofu); }

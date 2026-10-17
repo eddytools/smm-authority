@@ -59,6 +59,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Trend feed](docs/screenshots/03-trend-feed.png) **Trend feed** | ![Planner](docs/screenshots/04-planner-week.png) **Content planner** |
 | ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
+| ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | |
 
 ## API overview
 
@@ -86,6 +87,9 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/integrations`; POST `/ventures/{id}/integrations/{platform}/connect`; PATCH / DELETE `/ventures/{id}/integrations/{platform}` | owner or admin |
 | GET | `/integrations/{platform}/callback` (where LinkedIn / X send the browser back; secured by a one-time state) | public |
 | POST | `/ventures/{id}/plan/slots/{slot}/publish` (Publish now) | owner or admin |
+| GET | `/ventures/{id}/replies/opportunities` (questions worth answering, scripted ranking) | owner or admin |
+| POST | `/ventures/{id}/replies/draft` (from a pasted thread or a feed item); POST `.../replies/{id}/redraft`, `.../replies/{id}/to-plan` | owner or admin |
+| GET / PATCH / DELETE | `/ventures/{id}/replies[/{id}]` | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -202,6 +206,26 @@ read it, so follow their current docs where they differ):
    Bot"), add `<SMM_PUBLIC_API_URL>/integrations/x/callback` as the callback URL, and set `SMM_X_CLIENT_ID` /
    `SMM_X_CLIENT_SECRET`. Posting through the API needs an X API plan that includes write access: check X's current plans and limits.
 
+## Quick replies
+
+Draft a short, genuinely helpful reply to someone's question on Reddit, LinkedIn or X, plus an optional post idea for your own
+channel that can go straight into the planner. **The app never posts a reply**: you copy it and post it yourself. The page's
+**Questions worth answering** list comes from the trend feed and is ranked by a plain formula (recency 40%, engagement 35%,
+fit with your niche 25%); no AI is involved until you press Draft.
+
+Replying to strangers is where marketing turns into spam, so the guardrails are code, not a polite request to the model
+(`app/replies.py`, covered by tests):
+- **Pasted community rules become hard flags.** "No links" or "no self-promotion" in the rules makes the checks stricter and the
+  draft is told to avoid both.
+- **Every reply is checked** for links, mentions of your own business or offer (by name, website, offer and lead magnet),
+  promotional phrases ("DM me", "book a call", "check out my"), unverifiable personal claims ("we helped dozens of founders",
+  "in my experience"), unfilled `[placeholders]` and platform length limits. A flagged draft's button changes to "Copy anyway".
+- **The model may only claim what you gave it.** It is told never to invent experience, clients or results, to write no pitch
+  and no links, and that the thread text is untrusted data to ignore instructions inside. The model's own notes are not a safety
+  check: the checks above run on the final text regardless of what it says about itself.
+- **One draft per thread** (matched on the normalised URL), so it can't be used to flood a community. AI use is capped per user
+  like every other AI feature.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
@@ -238,6 +262,11 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   post as plain text because every special character is escaped to stop LinkedIn truncating posts at a parenthesis.
 - Tokens are encrypted but the key lives in the API's environment: protect it like a password. There is no audit log of
   who connected or posted what yet.
+- Quick replies: the app does not read threads or community rules by itself (you paste them; automated reading runs into
+  Reddit's API terms), and it does not track your self-promotion ratio (many communities want about 9 helpful posts to 1
+  promotional one). The checks are blunt pattern matching: they will miss some things and flag some innocent ones, and
+  "I posted it" is self-reported. The AI drafts are likely to read as AI-written: edit them into your own voice, and follow each
+  platform's rules on AI-assisted content and on disclosing affiliation. You are responsible for what you post.
 - Results are still typed in or imported from CSV: pulling analytics automatically is the next integration.
 - The demo data is entirely fictional, with a built-in pattern (stories win, product demos lag) so Performance has a
   story to tell. Its numbers say nothing about real results.

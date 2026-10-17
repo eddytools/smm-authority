@@ -11,7 +11,7 @@ from app.jobs.ingest import Fetcher, build_fetcher
 from app.crypto import TokenCipher, TokenCipherError
 from app.publishers import X, LinkedIn
 from app.publishing import Publishing
-from app.routers import auth, brief, feed, insights, integrations, plan, users, ventures
+from app.routers import auth, brief, feed, insights, integrations, plan, replies, users, ventures
 from app.seed import ensure_admin
 
 
@@ -69,6 +69,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
     app.include_router(plan.framework_router)
     app.include_router(insights.router)
     app.include_router(integrations.router)
+    app.include_router(replies.router)
     app.include_router(integrations.callback_router)
 
     @app.get("/health", tags=["meta"])

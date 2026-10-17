@@ -230,6 +230,46 @@ export interface ImportResult {
   errors: { row: number; message: string }[];
 }
 
+export interface Reply {
+  id: number;
+  venture_id: number;
+  platform: "reddit" | "linkedin" | "x";
+  community: string | null;
+  source_url: string | null;
+  feed_item_id: number | null;
+  question_text: string;
+  community_rules: string | null;
+  reply_draft: string;
+  post_idea_title: string | null;
+  post_idea: string | null;
+  notes: string | null;
+  status: "open" | "posted" | "dismissed";
+  plan_slot_id: number | null;
+  warnings: string[];
+  created_at: string;
+}
+
+export interface Opportunity {
+  id: number;
+  title: string;
+  url: string;
+  source_label: string;
+  source_type: string;
+  engagement: number;
+  age_hours: number;
+  score: number;
+}
+
+export interface ReplyRequest {
+  platform: "reddit" | "linkedin" | "x";
+  question_text?: string;
+  source_url?: string;
+  community?: string;
+  community_rules?: string;
+  feed_item_id?: number;
+  instructions?: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -352,6 +392,14 @@ export const api = {
   updateIntegration: (vid: number, platform: string, auto_publish: boolean) => request<Integration>(`/ventures/${vid}/integrations/${platform}`, json("PATCH", { auto_publish })),
   disconnectIntegration: (vid: number, platform: string) => request<void>(`/ventures/${vid}/integrations/${platform}`, { method: "DELETE" }),
   publishNow: (vid: number, slotId: number) => request<PlanSlot>(`/ventures/${vid}/plan/slots/${slotId}/publish`, { method: "POST" }),
+
+  listOpportunities: (vid: number) => request<Opportunity[]>(`/ventures/${vid}/replies/opportunities`),
+  listReplies: (vid: number, status: "open" | "posted" | "dismissed") => request<Reply[]>(`/ventures/${vid}/replies?status=${status}`),
+  draftReply: (vid: number, data: ReplyRequest) => request<Reply>(`/ventures/${vid}/replies/draft`, json("POST", data)),
+  updateReply: (vid: number, id: number, data: Partial<Pick<Reply, "reply_draft" | "status" | "post_idea" | "post_idea_title">>) => request<Reply>(`/ventures/${vid}/replies/${id}`, json("PATCH", data)),
+  redraftReply: (vid: number, id: number, instructions: string | null) => request<Reply>(`/ventures/${vid}/replies/${id}/redraft`, json("POST", { instructions })),
+  replyToPlan: (vid: number, id: number, data: { scheduled_at: string; platform: string; post_type?: string }) => request<{ slot_id: number }>(`/ventures/${vid}/replies/${id}/to-plan`, json("POST", data)),
+  deleteReply: (vid: number, id: number) => request<void>(`/ventures/${vid}/replies/${id}`, { method: "DELETE" }),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>

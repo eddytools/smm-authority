@@ -8,6 +8,7 @@ import VentureDetail from "./pages/VentureDetail";
 import VentureFeed from "./pages/VentureFeed";
 import VentureInsights from "./pages/VentureInsights";
 import VenturePlan from "./pages/VenturePlan";
+import VentureReplies from "./pages/VentureReplies";
 import VenturePublishing from "./pages/VenturePublishing";
 import Ventures from "./pages/Ventures";
 
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="ventures/:id/plan" element={<VenturePlan />} />
           <Route path="ventures/:id/insights" element={<VentureInsights />} />
           <Route path="ventures/:id/publishing" element={<VenturePublishing />} />
+          <Route path="ventures/:id/replies" element={<VentureReplies />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin/users" element={<AdminUsers />} />
           </Route>

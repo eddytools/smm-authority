@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.ai import DraftResult, ScoreResult, Suggestion
+from app.ai import DraftResult, ReplyResult, ScoreResult, Suggestion
 from app.brief_schemas import Ideation, Platform, PlatformPlan
 from app.config import Settings
 from app.main import create_app
@@ -49,6 +49,13 @@ class FakeAI:
         self.draft_calls = getattr(self, "draft_calls", []) + [context]
         post = getattr(self, "draft_text", None) or f"Draft about: {context['post']['topic']}"
         return DraftResult(post=post, hooks=["Alt hook one", "Alt hook two"], notes="Used a contrarian angle.", input_tokens=300, output_tokens=120, model=self.model)
+
+
+    def draft_reply(self, context):
+        self.reply_calls = getattr(self, "reply_calls", []) + [context]
+        reply = getattr(self, "reply_text", None) or ("The short answer is to start with one channel and measure it for a month before adding another. "
+                                                       "Pick the place your buyers already read, post twice a week, and track what they reply to. " * 2)
+        return ReplyResult(reply=reply, post_idea_title="Why one channel beats three", post_idea="Most teams spread thin. Here is a simple way to pick one channel.", notes="Kept it generic.", input_tokens=250, output_tokens=90, model=self.model)
 
 
 def make_settings(**overrides):
