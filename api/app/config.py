@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./smm.db"
     secret_key: str = DEFAULT_SECRET
     access_token_minutes: int = 60
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     admin_email: str | None = None
     admin_password: str | None = None
     allow_registration: bool = True

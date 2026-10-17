@@ -6,6 +6,17 @@ from app.brief_schemas import Ideation, Platform, PlatformPlan
 from app.config import Settings
 from app.main import create_app
 
+@pytest.fixture(autouse=True)
+def _isolate_from_local_config(monkeypatch):
+    """Tests must behave the same on every machine: ignore a developer's api/.env and any SMM_*/ANTHROPIC_* variables."""
+    import os
+
+    for name in list(os.environ):
+        if name.startswith("SMM_") or name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+
+
 ADMIN = {"email": "admin@example.com", "password": "admin-password-1"}
 
 

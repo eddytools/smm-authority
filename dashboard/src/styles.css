@@ -130,3 +130,27 @@ table.list td, table.list th { font-size: .88rem; vertical-align: top; }
 .ai-draft input { flex: 1; min-width: 220px; margin: 0; }
 .hooks { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-bottom: .7rem; }
 button.hook { font-size: .8rem; text-align: left; max-width: 100%; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .6rem; margin-bottom: 1rem; }
+.tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: .7rem .9rem; }
+.tile .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tile .l { font-size: .78rem; color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.two .card { margin: 0; }
+.finding { padding: .45rem 0; border-top: 1px solid var(--border); font-size: .92rem; }
+.finding:first-of-type { border-top: 0; }
+.card.worked { border-top: 4px solid var(--tofu); } .card.didnt { border-top: 4px solid var(--bofu); }
+.bar-row { display: grid; grid-template-columns: 150px 1fr 70px; gap: .6rem; align-items: center; padding: .3rem 0; font-size: .88rem; }
+.bar { height: 14px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+.bar.over > i { background: var(--tofu); } .bar.under > i { background: var(--bofu); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.metric-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); gap: .5rem; align-items: end; padding: .6rem 0 .3rem; }
+.metric-form label { margin: 0; font-size: .75rem; font-weight: 600; color: var(--muted); } .metric-form input { margin-top: .15rem; }
+.result-row { border-top: 1px solid var(--border); padding: .5rem 0; }
+.result-row:first-of-type { border-top: 0; }
+.result-head { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.result-head .topic { flex: 1; min-width: 200px; }
+.mixbar { display: flex; height: 18px; border-radius: 5px; overflow: hidden; background: var(--border); }
+.mixbar i { display: block; height: 100%; } .mixbar .tofu { background: var(--tofu); } .mixbar .mofu { background: var(--mofu); } .mixbar .bofu { background: var(--bofu); }
+@media (max-width: 560px) { .bar-row { grid-template-columns: 100px 1fr 60px; } }

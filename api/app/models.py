@@ -203,9 +203,37 @@ class PlanSlot(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     venture: Mapped[Venture] = relationship(back_populates="plan_slots")
+    metric: Mapped["PostMetric | None"] = relationship(back_populates="slot", uselist=False, cascade="all, delete-orphan", passive_deletes=True, lazy="joined")
+
+    @property
+    def has_metrics(self) -> bool:
+        return self.metric is not None
 
     @property
     def warnings(self) -> list[str]:
         from app.drafting import check_draft  # local import: drafting imports framework only, keep models import-light
 
         return check_draft(self.platform, self.draft)
+
+
+class PostMetric(Base):
+    """Results for one published post (one row per post, updated in place). Entered by hand or imported from CSV
+    until platform analytics APIs are connected."""
+
+    __tablename__ = "post_metrics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot_id: Mapped[int] = mapped_column(ForeignKey("plan_slots.id", ondelete="CASCADE"), unique=True)
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    reactions: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[int] = mapped_column(Integer, default=0)
+    shares: Mapped[int] = mapped_column(Integer, default=0)
+    saves: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    follows: Mapped[int] = mapped_column(Integer, default=0)
+    leads: Mapped[int] = mapped_column(Integer, default=0)  # leads the author attributes to this post
+    source: Mapped[str] = mapped_column(String(10), default="manual")  # "manual" | "csv"
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    slot: Mapped[PlanSlot] = relationship(back_populates="metric", lazy="joined")

@@ -330,6 +330,11 @@ function Editor({ slot, vid, fw, onClose, onPatch, onDelete }: { slot: PlanSlot;
       </div>
 
       {readOnly && <p className="muted small">This post has gone out, so its content is locked. You can still move its status forward.</p>}
+      {(slot.status === "published" || slot.status === "analysed") && (
+        <p className="small">
+          <Link to={`/ventures/${vid}/insights`}>{slot.has_metrics ? "Edit its results →" : "Enter its results →"}</Link>
+        </p>
+      )}
       <label>
         Topic
         <input value={f.topic} onChange={(e) => setF({ ...f, topic: e.target.value })} disabled={readOnly} maxLength={300} />

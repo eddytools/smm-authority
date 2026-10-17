@@ -26,22 +26,38 @@ Python scripts living beside the API; AI APIs are used for research only (see PR
 - A venture belongs to one owner; other users get `404` (not `403`) for ventures they don't own.
   Venture names are unique per owner.
 
-## Run locally
+## Run it locally
 
 ```bash
-# 1. API  (http://localhost:8000, docs at /docs)
-cd api
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-cp .env.example .env            # set SMM_ADMIN_EMAIL / SMM_ADMIN_PASSWORD / SMM_SECRET_KEY
-.venv/bin/uvicorn --factory app.main:create_app --reload
+./scripts/dev.sh            # first run installs dependencies; add --reset to rebuild the demo data
+```
 
-# 2. Dashboard  (http://localhost:5173)
-cd dashboard
-cp .env.example .env            # VITE_API_URL=http://localhost:8000
-npm install && npm run dev
+That starts the API on <http://localhost:8000> (interactive docs at `/docs`) and the dashboard on <http://localhost:5173>,
+and loads **demo data** (a fictional venture with a brief, a trend feed, an 8-week plan and results) so every screen has
+something in it. Sign in as `demo@example.com` / `demo-password-1`, or as the admin `admin@example.com` / `change-me-now`
+(from `api/.env`). Needs Python 3.11+ and Node 20+ (developed on Python 3.13 and Node 22).
+
+AI features (setup suggestions, feed scoring, drafting) need `ANTHROPIC_API_KEY` in `api/.env`; without it those buttons
+show a clear "not configured" message and the rest of the app works.
+
+Manual setup, if you prefer:
+
+```bash
+cd api && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt && cp .env.example .env
+.venv/bin/python -m app.demo                                   # optional demo data
+.venv/bin/uvicorn --factory app.main:create_app --reload       # API
+cd dashboard && cp .env.example .env && npm install && npm run dev   # dashboard
 ```
 
 Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build` (typecheck + build).
+
+## Screenshots (demo data)
+
+| | |
+|---|---|
+| ![Ventures](docs/screenshots/01-ventures.png) **Ventures** | ![Authority setup](docs/screenshots/02-venture-setup.png) **Authority setup** |
+| ![Trend feed](docs/screenshots/03-trend-feed.png) **Trend feed** | ![Planner](docs/screenshots/04-planner-week.png) **Content planner** |
+| ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
 
 ## API overview
 
@@ -63,6 +79,9 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/plan` (`start`, `end`, `status`, `include_archived`) | owner or admin |
 | POST / PATCH / DELETE | `/ventures/{id}/plan/slots[/{slot}]` | owner or admin |
 | POST | `/ventures/{id}/plan/slots/{slot}/draft` (AI draft, not saved) | owner or admin |
+| GET | `/ventures/{id}/insights` (`days`) | owner or admin |
+| GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
+| POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -133,6 +152,19 @@ Safeguards live in code, not in the prompt (`app/drafting.py`):
   thread; LinkedIn 3,000; Instagram 2,200), links on Reddit, too many LinkedIn hashtags;
 - the editor shows a live character count against the limit.
 
+## Performance tracking
+
+For each published post the author enters its results (impressions, reactions, comments, shares, saves, link clicks,
+new follows, leads), one at a time or by CSV import (`slot_id` plus any of those columns; valid rows are imported and every
+bad row is reported by number). The first result moves a post from Published to Analysed.
+
+**Insights are computed in plain code, not by AI** (`app/insights.py`), so they are free, reproducible and honest:
+engagement rate = (reactions + comments + shares + saves) / impressions, weighted by impressions, broken down by funnel
+stage, post type, platform and pillar. A group is called a "win" at 1.25x your average and a "loss" at 0.75x, and only
+once it has at least 2 posts. The report also lists best and weakest posts, which stage brought the leads, planned versus
+published funnel mix, and how many planned posts were actually published. With fewer than 10 measured posts the page says
+so: treat the results as hints. The planner does not change by itself; adjust the funnel mix when generating the next plan.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
@@ -158,8 +190,10 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   commercial use. Plan to move to Reddit's OAuth API with a registered app before launch.
 - Not built yet: X and Google Trends sources (they need paid API access), per-source "dismissals tune relevance",
   turning a feed item into a post idea, and an opt-in schedule for AI scoring.
-- The planner schedules and tracks posts but does **not publish** anything yet: "Published" is set by hand.
-  Auto-publishing to LinkedIn/X and performance tracking are the next slices.
+- The app does **not publish** anything yet: "Published" is set by hand, and results are typed in or imported from CSV.
+  Auto-publishing to LinkedIn/X and pulling analytics automatically need platform API access and are the next slices.
+- The demo data is entirely fictional, with a built-in pattern (stories win, product demos lag) so Performance has a
+  story to tell. Its numbers say nothing about real results.
 - Draft quality has not been evaluated with the real model (no API key in the build environment): the prompt, the
   context it receives and the safeguards are tested, the writing itself is not. Review a few real drafts, and consider
   an eval set, before trusting it at scale. Quick replies to forum questions are not built yet.

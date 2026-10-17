@@ -366,3 +366,106 @@ def test_cannot_approve_while_placeholders_remain(client, alice):
     assert patch(client, alice, vid, sid, status="in_review").status_code == 200  # review can still happen
     assert patch(client, alice, vid, sid, status="approved").status_code == 400
     assert patch(client, alice, vid, sid, draft="We grew 40% in 12 weeks", status="approved").json()["status"] == "approved"
+
+
+# --- results and insights -------------------------------------------------------------
+
+def published_slot(client, headers, vid, *, platform="linkedin", post_type="story", pillar="Case studies", days_ago=3, topic="A past post"):
+    when = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    sid = client.post(f"/ventures/{vid}/plan/slots", json={"scheduled_at": when, "platform": platform, "post_type": post_type, "topic": topic, "pillar": pillar}, headers=headers).json()["id"]
+    patch(client, headers, vid, sid, draft="A finished post", status="drafted")
+    for st in ("approved", "scheduled", "published"):
+        assert patch(client, headers, vid, sid, status=st).status_code == 200
+    return sid
+
+
+def put_metrics(client, headers, vid, sid, **values):
+    return client.put(f"/ventures/{vid}/plan/slots/{sid}/metrics", json=values, headers=headers)
+
+
+def test_results_only_for_published_posts_and_first_result_marks_it_analysed(client, alice):
+    vid, s = one_slot(client, alice)  # an unpublished idea
+    assert put_metrics(client, alice, vid, s["id"], impressions=100).status_code == 400
+    assert client.get(f"/ventures/{vid}/plan/slots/{s['id']}/metrics", headers=alice).json() is None
+
+    sid = published_slot(client, alice, vid)
+    assert [i for i in slots(client, alice, vid) if i["id"] == sid][0]["status"] == "published"
+    r = put_metrics(client, alice, vid, sid, impressions=1200, reactions=50, comments=9, shares=4, saves=7, clicks=30, follows=3, leads=2)
+    assert r.status_code == 200 and r.json()["impressions"] == 1200 and r.json()["source"] == "manual"
+    after = [i for i in slots(client, alice, vid) if i["id"] == sid][0]
+    assert after["status"] == "analysed" and after["has_metrics"] is True
+    # editing the numbers later is fine and updates the same record
+    assert put_metrics(client, alice, vid, sid, impressions=1500, leads=3).json()["impressions"] == 1500
+    got = client.get(f"/ventures/{vid}/plan/slots/{sid}/metrics", headers=alice).json()
+    assert got["impressions"] == 1500 and got["reactions"] == 0  # a PUT replaces: unspecified fields are zero
+
+
+def test_metrics_validation_and_access(client, alice, bob):
+    vid = venture(client, alice)
+    sid = published_slot(client, alice, vid)
+    assert put_metrics(client, alice, vid, sid, impressions=-1).status_code == 422
+    assert put_metrics(client, alice, vid, sid, impressions="lots").status_code == 422
+    assert put_metrics(client, alice, vid, sid, impressions=10**10).status_code == 422
+    assert put_metrics(client, bob, vid, sid, impressions=5).status_code == 404
+    assert client.get(f"/ventures/{vid}/insights", headers=bob).status_code == 404
+    assert client.post(f"/ventures/{vid}/metrics/import", json={"csv": "slot_id,impressions\n1,5"}, headers=bob).status_code == 404
+    other = venture(client, alice, name="Other")
+    assert put_metrics(client, alice, other, sid, impressions=5).status_code == 404  # slot belongs to a different venture
+
+
+def test_csv_import_reports_row_errors_and_imports_the_rest(client, alice):
+    vid = venture(client, alice)
+    a, b = published_slot(client, alice, vid, topic="a"), published_slot(client, alice, vid, topic="b")
+    other = venture(client, alice, name="Other")  # an unpublished slot that lives in a different venture
+    generate(client, alice, other, period="week")
+    idea = slots(client, alice, other)[0]
+    csv_text = "﻿Slot_ID, Impressions ,reactions,leads\n" + "\n".join([f"{a},1000,50,2", f"{b},800,20,", "99999,5,5,5", f"{idea['id']},5,5,5", f"{a},abc,1,1", f"{a},-4,1,1", ","])
+    out = client.post(f"/ventures/{vid}/metrics/import", json={"csv": csv_text}, headers=alice).json()
+    assert out["imported"] == 2
+    rows = {e["row"]: e["message"] for e in out["errors"]}
+    assert set(rows) == {4, 5, 6, 7, 8}
+    assert "No planned post" in rows[4] and "No planned post" in rows[5] and "whole number" in rows[6] and "whole number" in rows[7]
+    got = client.get(f"/ventures/{vid}/plan/slots/{a}/metrics", headers=alice).json()
+    assert got["impressions"] == 1000 and got["reactions"] == 50 and got["leads"] == 2 and got["source"] == "csv"
+    assert client.get(f"/ventures/{vid}/plan/slots/{b}/metrics", headers=alice).json()["leads"] == 0  # empty cell leaves the default
+
+
+def test_csv_import_header_validation_and_partial_updates(client, alice):
+    vid = venture(client, alice)
+    sid = published_slot(client, alice, vid)
+    for bad in ("impressions\n5", "slot_id\n5", "foo,bar\n1,2", "\n"):
+        assert client.post(f"/ventures/{vid}/metrics/import", json={"csv": bad}, headers=alice).status_code == 400, bad
+    put_metrics(client, alice, vid, sid, impressions=500, reactions=25, leads=1)
+    client.post(f"/ventures/{vid}/metrics/import", json={"csv": f"slot_id,clicks\n{sid},9"}, headers=alice)
+    got = client.get(f"/ventures/{vid}/plan/slots/{sid}/metrics", headers=alice).json()
+    assert got["clicks"] == 9 and got["impressions"] == 500 and got["reactions"] == 25  # import only touches the columns it has
+
+
+def test_insights_endpoint_end_to_end(client, alice):
+    vid = venture(client, alice)
+    for i in range(3):
+        put_metrics(client, alice, vid, published_slot(client, alice, vid, post_type="story", days_ago=2 + i, topic=f"story {i}"), impressions=1000, reactions=100, leads=2)
+        put_metrics(client, alice, vid, published_slot(client, alice, vid, post_type="product_demo", platform="x", pillar="Demos", days_ago=2 + i, topic=f"demo {i}"), impressions=1000, reactions=10)
+    waiting = published_slot(client, alice, vid, topic="no results yet")
+
+    r = client.get(f"/ventures/{vid}/insights", headers=alice).json()
+    assert r["totals"]["measured"] == 6 and r["totals"]["published"] == 7 and r["totals"]["leads"] == 6
+    assert abs(r["totals"]["engagement_rate"] - 0.055) < 1e-6
+    assert any("Story posts earn" in w["message"] for w in r["worked"])
+    assert any("Product demo posts are underperforming" in d["message"] for d in r["didnt"])
+    assert [w["slot_id"] for w in r["waiting"]] == [waiting]
+    assert r["breakdowns"]["platform"][0]["key"] == "linkedin" and r["note"]
+    assert r["adherence"]["published"] == 7
+    # a narrower window excludes older posts
+    assert client.get(f"/ventures/{vid}/insights?days=7", headers=alice).status_code == 200
+    assert client.get(f"/ventures/{vid}/insights?days=3", headers=alice).status_code == 422
+
+
+def test_deleting_a_venture_removes_metrics(client, alice):
+    from app.models import PostMetric
+
+    vid = venture(client, alice)
+    put_metrics(client, alice, vid, published_slot(client, alice, vid), impressions=10)
+    assert client.delete(f"/ventures/{vid}", headers=alice).status_code == 204
+    with client.app.state.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(PostMetric)) == 0

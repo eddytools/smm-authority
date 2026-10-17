@@ -130,6 +130,7 @@ export interface PlanSlot {
   reactive: boolean;
   source_item_id: number | null;
   warnings: string[];
+  has_metrics: boolean;
 }
 
 export interface DraftResult {
@@ -144,6 +145,74 @@ export interface GenerateResult {
   removed: number;
   kept: number;
   by_stage: Record<Stage, number>;
+}
+
+export interface Metrics {
+  impressions: number;
+  reactions: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  clicks: number;
+  follows: number;
+  leads: number;
+}
+
+export interface Group {
+  key: string;
+  label: string;
+  posts: number;
+  impressions: number;
+  avg_impressions: number;
+  engagements: number;
+  engagement_rate: number | null;
+  clicks: number;
+  ctr: number | null;
+  follows: number;
+  leads: number;
+  lift: number | null;
+}
+
+export interface Finding {
+  dimension: string;
+  dimension_title: string;
+  key: string;
+  label: string;
+  posts: number;
+  lift: number | null;
+  message: string;
+}
+
+export interface PostView {
+  slot_id: number;
+  topic: string;
+  platform: string;
+  post_type: string;
+  stage: Stage;
+  scheduled_at: string;
+  impressions: number;
+  engagement_rate: number;
+  leads: number;
+}
+
+export interface Insights {
+  range_days: number;
+  totals: { posts: number; impressions: number; engagements: number; engagement_rate: number | null; clicks: number; ctr: number | null; follows: number; leads: number; published: number; measured: number };
+  breakdowns: Record<"platform" | "pillar" | "post_type" | "stage", Group[]>;
+  worked: Finding[];
+  didnt: Finding[];
+  recommendations: string[];
+  top: PostView[];
+  bottom: PostView[];
+  adherence: { due: number; published: number; skipped: number; rate: number | null };
+  mix: Record<Stage, { planned: number; published: number }>;
+  waiting: { slot_id: number; topic: string; platform: string; scheduled_at: string }[];
+  note: string | null;
+}
+
+export interface ImportResult {
+  imported: number;
+  errors: { row: number; message: string }[];
 }
 
 export class ApiError extends Error {
@@ -257,6 +326,11 @@ export const api = {
   draftSlot: (vid: number, id: number, instructions: string | null) =>
     request<DraftResult>(`/ventures/${vid}/plan/slots/${id}/draft`, json("POST", { instructions })),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
+
+  getInsights: (vid: number, days: number) => request<Insights>(`/ventures/${vid}/insights?days=${days}`),
+  getMetrics: (vid: number, slotId: number) => request<(Metrics & { slot_id: number }) | null>(`/ventures/${vid}/plan/slots/${slotId}/metrics`),
+  saveMetrics: (vid: number, slotId: number, data: Metrics) => request<Metrics>(`/ventures/${vid}/plan/slots/${slotId}/metrics`, json("PUT", data)),
+  importMetrics: (vid: number, csv: string) => request<ImportResult>(`/ventures/${vid}/metrics/import`, json("POST", { csv })),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>

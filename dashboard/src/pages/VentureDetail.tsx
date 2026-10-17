@@ -5,10 +5,6 @@ import { useAuth } from "../auth";
 import BriefEditor from "../components/BriefEditor";
 import VentureForm from "../components/VentureForm";
 
-const UPCOMING = [
-  ["Performance", "What worked, what didn't, and leads by post"],
-];
-
 export default function VentureDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -96,17 +92,10 @@ export default function VentureDetail() {
           <h4>Content planner</h4>
           <p className="muted small">A weekly or monthly TOFU / MOFU / BOFU calendar built from your setup.</p>
         </Link>
-      </div>
-
-      <h3>Coming next for this venture</h3>
-      <div className="grid">
-        {UPCOMING.map(([title, text]) => (
-          <div key={title} className="card soon">
-            <h4>{title}</h4>
-            <p className="muted small">{text}</p>
-            <span className="badge">soon</span>
-          </div>
-        ))}
+        <Link to={`/ventures/${venture.id}/insights`} className="card linkcard">
+          <h4>Performance</h4>
+          <p className="muted small">What worked, what didn't, and which posts brought leads.</p>
+        </Link>
       </div>
     </>
   );

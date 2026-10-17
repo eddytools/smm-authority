@@ -96,6 +96,7 @@ class SlotOut(ORM):
     reactive: bool
     source_item_id: int | None
     warnings: list[str] = []
+    has_metrics: bool = False
 
 
 class DraftRequest(BaseModel):
