@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.2 for review |
-| **Date** | 2026-10-16 |
+| **Status** | Draft v0.3 for review |
+| **Date** | 2026-10-17 |
 | **Owner** | eddytools |
-| **Supersedes** | v0.1 (generic scope) |
+| **Supersedes** | v0.2 (added execution model: scripts for recurring work, AI API for research) |
 
 > **[A]** = assumption, **[Q]** = open question. Confirm or correct before build starts.
 
@@ -59,6 +59,27 @@ The app does five things:
 ## 5. Product Modules (Scope Map)
 
 Each module maps to the requirements in the brief. Numbers in brackets are the original requirement numbers.
+
+### Execution Model (applies to all modules)
+
+**Rule: AI APIs are used for research and judgment. Recurring, predictable work runs as plain Python or JS scripts.** AI is never called to do something a script can do deterministically.
+
+| Work type | Executor | Examples |
+|---|---|---|
+| **Recurring / scheduled, deterministic** | **Python or JS scripts** on a scheduler | Fetch RSS, Reddit, X and Google Trends data; dedupe; normalise; collect post metrics; compute engagement stats and rankings; build the monthly calendar skeleton from the funnel rules; fire reminders and scheduled publishes; send the weekly digest; refresh tokens; retry failures |
+| **Research / judgment, on demand or batched** | **AI API (LLM)** | Build the Authority Brief from setup answers; score topic relevance to the ICP; summarise why a topic matters; extract patterns from high-engagement posts; suggest post angles and hooks; draft content in the user's voice; draft quick-response replies; write the "what worked / what didn't" insights |
+
+How the two connect:
+
+1. **Scripts gather and prepare.** A scheduled job pulls raw items, filters with cheap rules (keywords, recency, minimum engagement, dedupe), and stores them.
+2. **AI processes only the shortlist.** Only items that pass the script filters are sent to the LLM, in batches, with results cached by content hash. This keeps cost predictable.
+3. **Scripts act on the output.** Results are written to the database, and other scripts place them on the calendar, send notifications, or publish after approval.
+
+Rules for the implementation:
+- Each recurring job is a standalone, idempotent script with logging, retries, and a per-source health status.
+- LLM calls go through one wrapper that applies caching, token budgets per plan, structured (JSON) output validation, and a fallback to "no AI result" so a script run never fails because the model did.
+- Fixed formulas (funnel mix, cadence, slot placement, metric aggregation, engagement ranking) live in code, not in prompts, so they are testable and free to run.
+- On-demand AI features (draft, quick response, regenerate) run when the user asks, not on a schedule, unless the user opts into daily auto-suggestions.
 
 ### M1. Account, Workspace and One-Time Setup [1, 2]
 
@@ -218,6 +239,9 @@ The planner is built on a **three-stage funnel with 10 post types**. This is a b
 | FR-16 | Feedback loop: performance data re-ranks suggestions and adjusts the mix | Should |
 | FR-17 | Weekly digest email and reminders | Should |
 | FR-18 | Admin console with usage and cost monitoring | Should |
+| FR-19 | All recurring jobs (ingestion, filtering, metrics, ranking, plan skeleton, publishing, digests) run as Python/JS scripts, not LLM calls | Must |
+| FR-20 | LLM calls limited to research/judgment tasks, routed through one wrapper with caching, budgets and validated output | Must |
+| FR-21 | Admin view of each scheduled job's last run, status, duration and error | Should |
 
 ## 9. Non-Functional Requirements
 
@@ -226,15 +250,29 @@ The planner is built on a **three-stage funnel with 10 post types**. This is a b
 - **Security and privacy:** tenant data isolation; encrypted OAuth tokens; data export and deletion; user content not used to train third-party models.
 - **Compliance:** follow each platform's API terms, rate limits and data-retention rules; no scraping that violates terms; AI-content disclosure where required.
 - **Reliability:** failed scheduled posts retried and surfaced; ingestion failures per source visible in admin.
-- **Cost control:** per-plan caps on LLM calls, source queries and connected accounts.
+- **Cost control:** recurring work runs as scripts with zero LLM cost; LLM calls are limited to shortlisted items and on-demand requests, cached by content hash, and capped per plan (LLM calls, source queries, connected accounts).
+- **Script quality:** every scheduled script is idempotent, unit-tested against recorded API fixtures, logs structured output, and reports success/failure to the admin health view.
 - **Accessibility:** WCAG 2.1 AA for core flows.
 
 ## 10. Proposed Architecture (High Level) **[A]**
 
 - **Frontend:** Next.js/React responsive web app.
-- **Backend:** API service plus background workers and a scheduler.
-- **Ingestion layer:** pluggable source connectors (Google, X, Reddit, RSS, LinkedIn-via-approved-route) writing normalised items to the database; dedupe and clustering.
-- **AI layer:** LLM for ICP-based relevance scoring, topic summaries, pattern extraction, suggestions and drafts, grounded on the Authority Brief; evaluation set for quality and brand-voice checks.
+- **Backend:** API service (Python/FastAPI or Node) plus a job scheduler and worker queue **[A]** (e.g. cron/APScheduler/Celery or BullMQ).
+- **Scheduled scripts layer (Python or JS):** one script per recurring job, run by the scheduler:
+
+  | Script | Frequency [A] | Purpose |
+  |---|---|---|
+  | `ingest_rss` / `ingest_reddit` / `ingest_x` / `ingest_trends` | Hourly to daily | Pull and normalise items per workspace sources |
+  | `filter_and_dedupe` | After each ingest | Rule-based shortlist (relevance keywords, recency, engagement threshold) |
+  | `collect_metrics` | Daily | Pull post analytics from platform APIs |
+  | `rank_engagement` / `topic_heat` | Daily/hourly | Compute engagement ranking and topic velocity |
+  | `build_plan_skeleton` | Weekly/monthly | Fill slots from funnel mix, cadence and pillar rules |
+  | `publish_due_posts` / `send_reminders` | Every few minutes | Publish approved posts or notify for manual posting |
+  | `send_digest` | Weekly | Digest email |
+  | `refresh_tokens` / `health_check` | Daily | Keep connectors working; flag failing sources |
+
+- **Ingestion layer:** pluggable source connectors (Google, X, Reddit, RSS, LinkedIn-via-approved-route) used by the scripts above, writing normalised items to the database.
+- **AI layer (API-based):** LLM called only for research and judgment on shortlisted items and on-demand requests: ICP relevance scoring, topic summaries, pattern extraction, suggestions, drafts and insights, grounded on the Authority Brief. Single wrapper with caching, token budgets, JSON schema validation; evaluation set for quality and brand-voice checks.
 - **Data:** Postgres (tenants, briefs, sources, topics, posts, plans, metrics) with vector search for relevance and voice; object storage for assets.
 - **Integrations:** Stripe, OAuth providers, platform publishing/analytics APIs, email service, UTM/link tracking.
 
@@ -272,7 +310,8 @@ The planner is built on a **three-stage funnel with 10 post types**. This is a b
 | Community backlash to self-promotion | Account bans or bad reputation | Human-in-the-loop replies, per-community rule hints, CTA warnings |
 | Trend feed noise | Users ignore it | ICP-based relevance scoring, feedback (dismiss/save) tuning |
 | Weak lead attribution | Can't prove ROI | UTM defaults, lead-magnet tracking, manual tagging |
-| LLM cost overrun | Margin loss | Caching, model tiering, per-plan caps |
+| LLM cost overrun | Margin loss | Scripts do the recurring work; LLM sees only shortlisted items; caching, model tiering, per-plan caps |
+| Scheduled scripts fail silently or break on API changes | Stale feed, missed posts | Idempotent jobs, retries, health dashboard and alerts, fixture-based tests |
 | Scope creep | Delays | Hold phase boundaries in section 11 |
 
 ## 14. Assumptions and Dependencies
@@ -292,6 +331,9 @@ The planner is built on a **three-stage funnel with 10 post types**. This is a b
 6. Default TOFU/MOFU/BOFU ratio and weekly posting cadence?
 7. Is the reference infographic's framework to be used as-is, or branded and extended?
 8. Existing brand, design or technical constraints for this repository?
+9. Python or JS (Node) for the scripts and backend? Python is a natural fit for ingestion and data work; Node keeps one language with the Next.js frontend.
+10. Where do the scheduled scripts run (managed cron/queue, serverless scheduler, or a worker on your own server)?
+11. Which LLM provider and model tiers for research tasks, and should there be a per-user daily AI budget?
 
 ## 16. Approval
 
