@@ -2,12 +2,15 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import AwareDatetime
 from sqlalchemy import func, select
 
 from app.access import get_accessible_venture
-from app.deps import CurrentUser, DbSession
+from app.ai import AIError, AIProvider
+from app.ai_budget import ensure_budget, record_usage
+from app.deps import CurrentUser, DbSession, SettingsDep
+from app.drafting import build_context, check_draft, placeholders
 from app.framework import (
     DRAFT_REQUIRED,
     GUIDANCE,
@@ -22,12 +25,13 @@ from app.framework import (
     Stage,
 )
 from app.models import BriefVersion, FeedItem, ItemStatus, PlanSlot
-from app.plan_schemas import GenerateOut, GenerateRequest, SlotCreate, SlotOut, SlotUpdate
+from app.plan_schemas import DraftOut, DraftRequest, GenerateOut, GenerateRequest, SlotCreate, SlotOut, SlotUpdate
 from app.planner import Candidate, PlanningError, generate
 
 router = APIRouter(prefix="/ventures/{venture_id}/plan", tags=["content planner"])
 framework_router = APIRouter(prefix="/planner", tags=["content planner"])
 CONTENT_FIELDS = {"scheduled_at", "platform", "post_type", "topic", "pillar", "cta", "draft"}
+APPROVAL_STATUSES = {SlotStatus.approved, SlotStatus.scheduled, SlotStatus.published, SlotStatus.analysed}
 
 
 @framework_router.get("/framework")
@@ -193,6 +197,8 @@ def update_slot(venture_id: int, slot_id: int, body: SlotUpdate, user: CurrentUs
     # Hand-edited work must survive "regenerate": a manual change to an unedited idea locks it (unless the user said otherwise).
     if slot.status == SlotStatus.idea and CONTENT_FIELDS & changes.keys() and "locked" not in changes:
         slot.locked = True
+    if new_status in APPROVAL_STATUSES and new_status != slot.status and (left := placeholders(new_draft)):
+        raise HTTPException(400, f"Fill in or remove the placeholders before approving: {', '.join(left[:4])}")
     for field, value in changes.items():
         if field == "platform":
             value = value.value
@@ -213,3 +219,33 @@ def delete_slot(venture_id: int, slot_id: int, user: CurrentUser, db: DbSession)
         raise HTTPException(400, "Published posts can't be deleted. Archive it instead.")
     db.delete(slot)
     db.commit()
+
+
+@router.post("/slots/{slot_id}/draft", response_model=DraftOut)
+def draft_slot(venture_id: int, slot_id: int, body: DraftRequest, request: Request, user: CurrentUser, db: DbSession, settings: SettingsDep):
+    """On-demand AI draft in the venture's voice. Returned, not saved: the author reviews, edits and saves it."""
+    venture = get_accessible_venture(db, venture_id, user)
+    slot = _get_slot(db, venture_id, slot_id)
+    if slot.status in READ_ONLY:
+        raise HTTPException(400, f"A {slot.status.value} post can't be redrafted.")
+    ai: AIProvider | None = request.app.state.ai
+    if ai is None:
+        raise HTTPException(503, "AI drafting is not configured on this server")
+    ensure_budget(db, user, settings)
+
+    brief_row = db.scalar(select(BriefVersion).where(BriefVersion.venture_id == venture_id).order_by(BriefVersion.version.desc()).limit(1))
+    item = db.get(FeedItem, slot.source_item_id) if slot.source_item_id else None
+    context = build_context(
+        {"name": venture.name, "niche": venture.niche, "description": venture.description},
+        brief_row.data if brief_row else None,
+        {"platform": slot.platform, "post_type": slot.post_type.value, "stage": slot.stage.value, "pillar": slot.pillar, "topic": slot.topic, "cta": slot.cta, "draft": slot.draft},
+        {"title": item.title, "summary": item.summary, "url": item.url} if item else None,
+        body.instructions,
+    )
+    try:
+        result = ai.draft_post(context)
+    except AIError as exc:
+        raise HTTPException(exc.status_code, exc.message)
+    record_usage(db, user, venture.id, "slot_draft", result)
+    db.commit()
+    return DraftOut(draft=result.post, hooks=result.hooks, notes=result.notes, warnings=check_draft(slot.platform, result.post))

@@ -129,6 +129,14 @@ export interface PlanSlot {
   locked: boolean;
   reactive: boolean;
   source_item_id: number | null;
+  warnings: string[];
+}
+
+export interface DraftResult {
+  draft: string;
+  hooks: string[];
+  notes: string;
+  warnings: string[];
 }
 
 export interface GenerateResult {
@@ -246,6 +254,8 @@ export const api = {
     request<GenerateResult>(`/ventures/${vid}/plan/generate`, json("POST", data)),
   updateSlot: (vid: number, id: number, data: Partial<Pick<PlanSlot, "scheduled_at" | "platform" | "post_type" | "topic" | "pillar" | "cta" | "draft" | "status" | "locked">>) =>
     request<PlanSlot>(`/ventures/${vid}/plan/slots/${id}`, json("PATCH", data)),
+  draftSlot: (vid: number, id: number, instructions: string | null) =>
+    request<DraftResult>(`/ventures/${vid}/plan/slots/${id}/draft`, json("POST", { instructions })),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
   listUsers: () => request<User[]>("/users"),

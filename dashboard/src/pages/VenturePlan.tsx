@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, type Framework, type PlanSlot, type SlotStatus, type Stage, type Venture } from "../api";
+
+const CHAR_LIMIT: Record<string, number> = { x: 280, linkedin: 3000, instagram: 2200, youtube: 5000 };
 
 const READ_ONLY: SlotStatus[] = ["published", "analysed", "archived"];
 const STAGES: Stage[] = ["tofu", "mofu", "bofu"];
@@ -36,7 +38,21 @@ export default function VenturePlan() {
   const [busy, setBusy] = useState(false);
   const [gen, setGen] = useState({ start: nextMonday(), period: "month" as "week" | "month", tofu: 50, mofu: 30, bofu: 20 });
 
-  const load = useCallback(async () => setSlots(await api.listPlan(vid)), [vid]);
+  const landed = useRef(false);
+  const load = useCallback(async () => {
+    const list = await api.listPlan(vid);
+    setSlots(list);
+    // First load only: open on the week of the next planned post, not on an empty current week.
+    if (!landed.current && list.length) {
+      landed.current = true;
+      const now = Date.now();
+      const thisWeek = dayKey(mondayOf(new Date()));
+      if (!list.some((s) => dayKey(mondayOf(new Date(s.scheduled_at))) === thisWeek)) {
+        const upcoming = list.find((s) => new Date(s.scheduled_at).getTime() >= now) ?? list[0];
+        setWeek(mondayOf(new Date(upcoming.scheduled_at)));
+      }
+    }
+  }, [vid]);
   useEffect(() => {
     api.getVenture(vid).then(setVenture).catch((e: Error) => setError(e.message));
     api.getFramework().then(setFw).catch((e: Error) => setError(e.message));
@@ -244,6 +260,7 @@ export default function VenturePlan() {
         <Editor
           key={selected.id}
           slot={selected}
+          vid={vid}
           fw={fw}
           onClose={() => setSelectedId(null)}
           onPatch={(data) => patch(selected, data)}
@@ -261,15 +278,33 @@ export default function VenturePlan() {
   );
 }
 
-function Editor({ slot, fw, onClose, onPatch, onDelete }: { slot: PlanSlot; fw: Framework; onClose: () => void; onPatch: (d: Parameters<typeof api.updateSlot>[2]) => Promise<void>; onDelete: () => void }) {
+function Editor({ slot, vid, fw, onClose, onPatch, onDelete }: { slot: PlanSlot; vid: number; fw: Framework; onClose: () => void; onPatch: (d: Parameters<typeof api.updateSlot>[2]) => Promise<void>; onDelete: () => void }) {
   const [f, setF] = useState({ topic: slot.topic, pillar: slot.pillar ?? "", cta: slot.cta ?? "", draft: slot.draft ?? "", when: toLocalInput(slot.scheduled_at) });
   const readOnly = READ_ONLY.includes(slot.status);
+  const [ai, setAi] = useState<{ instructions: string; busy: boolean; hooks: string[]; notes: string; error: string }>({ instructions: "", busy: false, hooks: [], notes: "", error: "" });
   const typeInfo = fw.stages.flatMap((s) => s.post_types.map((t) => ({ ...t, stage: s.key }))).find((t) => t.key === slot.post_type);
   const next = fw.transitions[slot.status] ?? [];
 
   const dirty =
     f.topic !== slot.topic || f.pillar !== (slot.pillar ?? "") || f.cta !== (slot.cta ?? "") || f.draft !== (slot.draft ?? "") || f.when !== toLocalInput(slot.scheduled_at);
 
+  async function draftWithAi() {
+    if (f.draft.trim() && !window.confirm("Replace the current draft with a new AI draft?")) return;
+    setAi((a) => ({ ...a, busy: true, error: "", notes: "", hooks: [] }));
+    try {
+      const r = await api.draftSlot(vid, slot.id, ai.instructions.trim() || null);
+      setF((cur) => ({ ...cur, draft: r.draft }));
+      setAi((a) => ({ ...a, busy: false, hooks: r.hooks, notes: r.notes }));
+    } catch (e) {
+      setAi((a) => ({ ...a, busy: false, error: (e as Error).message }));
+    }
+  }
+
+  // swap the first line for an alternative hook
+  const useHook = (hook: string) => setF((cur) => ({ ...cur, draft: [hook, ...cur.draft.split("\n").slice(1)].join("\n") }));
+
+  const limit = CHAR_LIMIT[slot.platform];
+  const len = f.draft.length;
   const save = (extra: Parameters<typeof api.updateSlot>[2] = {}) =>
     onPatch({
       ...(readOnly ? {} : { topic: f.topic.trim(), pillar: f.pillar.trim() || null, cta: f.cta.trim() || null, draft: f.draft, scheduled_at: new Date(f.when).toISOString() }),
@@ -315,8 +350,42 @@ function Editor({ slot, fw, onClose, onPatch, onDelete }: { slot: PlanSlot; fw: 
       </div>
       <label>
         Draft <span className="muted small">(required before the post can move past “Idea”)</span>
-        <textarea value={f.draft} onChange={(e) => setF({ ...f, draft: e.target.value })} disabled={readOnly} maxLength={10000} />
+        <textarea value={f.draft} onChange={(e) => setF({ ...f, draft: e.target.value })} disabled={readOnly} maxLength={10000} aria-label="Draft" />
       </label>
+      <div className="draft-meta small">
+        <span className={limit && len > limit ? "status-error" : "muted"} aria-label="Character count">
+          {len}{limit ? ` / ${limit}` : ""} characters
+        </span>
+      </div>
+      {slot.warnings.length > 0 && (
+        <ul className="warnings" aria-label="Draft warnings">
+          {slot.warnings.map((w) => <li key={w}>{w}</li>)}
+        </ul>
+      )}
+      {!readOnly && (
+        <div className="ai-draft">
+          <input
+            aria-label="Instructions for the AI"
+            placeholder="Optional: e.g. make it shorter, more contrarian, open with a question"
+            value={ai.instructions}
+            maxLength={500}
+            onChange={(e) => setAi({ ...ai, instructions: e.target.value })}
+          />
+          <button className="ghost" onClick={draftWithAi} disabled={ai.busy}>
+            {ai.busy ? "Drafting…" : f.draft.trim() ? "Redraft with AI" : "Draft with AI"}
+          </button>
+        </div>
+      )}
+      {ai.error && <p className="error" role="alert">{ai.error}</p>}
+      {ai.notes && <p className="notice" role="status">{ai.notes} Review it, edit it, then save: nothing is saved or posted until you do.</p>}
+      {ai.hooks.length > 0 && (
+        <div className="hooks">
+          <span className="muted small">Other openings:</span>
+          {ai.hooks.map((h) => (
+            <button key={h} className="ghost hook" onClick={() => useHook(h)} title="Use as the first line">{h}</button>
+          ))}
+        </div>
+      )}
 
       <div className="row">
         <button onClick={() => save()} disabled={!dirty || readOnly}>Save changes</button>

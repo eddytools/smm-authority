@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.ai import ScoreResult, Suggestion
+from app.ai import DraftResult, ScoreResult, Suggestion
 from app.brief_schemas import Ideation, Platform, PlatformPlan
 from app.config import Settings
 from app.main import create_app
@@ -32,6 +32,12 @@ class FakeAI:
         # deterministic: longer titles score higher, so tests can assert ordering
         scores = {i["id"]: (min(len(i["title"]), 100), f"why {i['id']}") for i in items}
         return ScoreResult(scores=scores, input_tokens=200, output_tokens=80, model=self.model)
+
+
+    def draft_post(self, context):
+        self.draft_calls = getattr(self, "draft_calls", []) + [context]
+        post = getattr(self, "draft_text", None) or f"Draft about: {context['post']['topic']}"
+        return DraftResult(post=post, hooks=["Alt hook one", "Alt hook two"], notes="Used a contrarian angle.", input_tokens=300, output_tokens=120, model=self.model)
 
 
 def make_settings(**overrides):

@@ -203,3 +203,9 @@ class PlanSlot(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     venture: Mapped[Venture] = relationship(back_populates="plan_slots")
+
+    @property
+    def warnings(self) -> list[str]:
+        from app.drafting import check_draft  # local import: drafting imports framework only, keep models import-light
+
+        return check_draft(self.platform, self.draft)

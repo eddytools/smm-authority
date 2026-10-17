@@ -95,3 +95,15 @@ class SlotOut(ORM):
     locked: bool
     reactive: bool
     source_item_id: int | None
+    warnings: list[str] = []
+
+
+class DraftRequest(BaseModel):
+    instructions: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
+
+
+class DraftOut(BaseModel):
+    draft: str
+    hooks: list[str]
+    notes: str
+    warnings: list[str]

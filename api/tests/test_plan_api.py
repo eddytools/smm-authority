@@ -277,3 +277,92 @@ def test_hand_editing_an_idea_locks_it_so_regenerate_keeps_it(client, alice):
     assert out["kept"] == 2
     ids = {i["id"] for i in slots(client, alice, vid)}
     assert sid in ids and others[0]["id"] in ids and others[2]["id"] not in ids
+
+
+# --- drafting -----------------------------------------------------------------------
+
+def draft(client, headers, vid, sid, **body):
+    return client.post(f"/ventures/{vid}/plan/slots/{sid}/draft", json=body, headers=headers)
+
+
+def test_draft_returns_text_hooks_notes_and_does_not_save(client, alice, fake_ai):
+    vid, s = one_slot(client, alice)
+    r = draft(client, alice, vid, s["id"], instructions="Make it punchy")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["draft"].startswith("Draft about:") and body["hooks"] == ["Alt hook one", "Alt hook two"] and body["notes"]
+    ctx = fake_ai.draft_calls[0]
+    assert ctx["post"]["topic"] == s["topic"] and ctx["post"]["platform"] == s["platform"] and ctx["extra_instructions"] == "Make it punchy"
+    assert ctx["voice"] is not None and ctx["venture"]["name"] == "Acme"
+    assert slots(client, alice, vid)[0]["draft"] is None  # the author decides what to keep
+    with client.app.state.session_factory() as db:
+        from app.models import AIUsage
+
+        usage = [u for u in db.scalars(select(AIUsage)).all() if u.feature == "slot_draft"]
+    assert len(usage) == 1 and usage[0].input_tokens == 300
+
+
+def test_draft_includes_the_linked_feed_article(client, alice, fetcher, fake_ai):
+    fetcher.responses["https://blog.example/feed.xml"] = fresh_rss()
+    vid = venture(client, alice)
+    client.post(f"/ventures/{vid}/sources", json={"type": "rss", "target": "https://blog.example/feed.xml"}, headers=alice)
+    client.post(f"/ventures/{vid}/feed/refresh", headers=alice)
+    generate(client, alice, vid, period="week")
+    linked = next(s for s in slots(client, alice, vid) if s["source_item_id"])
+    draft(client, alice, vid, linked["id"])
+    article = fake_ai.draft_calls[0]["source_article"]
+    assert article and article["title"] == linked["topic"] and article["url"].startswith("https://blog.example")
+
+
+def test_draft_guards(client, alice, bob, fake_ai):
+    vid, s = one_slot(client, alice)
+    assert draft(client, bob, vid, s["id"]).status_code == 404
+    assert client.post(f"/ventures/{vid}/plan/slots/{s['id']}/draft", json={}).status_code == 401
+    assert draft(client, alice, vid, 9999).status_code == 404
+    assert draft(client, alice, vid, s["id"], instructions="x" * 501).status_code == 422
+    patch(client, alice, vid, s["id"], draft="text", status="drafted")
+    for st in ("approved", "scheduled", "published"):
+        patch(client, alice, vid, s["id"], status=st)
+    assert draft(client, alice, vid, s["id"]).status_code == 400  # already published
+
+
+def test_draft_503_without_ai_and_429_over_the_limit(make_client, fetcher):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app(make_settings(), ai=None, fetcher=fetcher)) as c:
+        register(c, "a@example.com")
+        h = login(c, "a@example.com")
+        vid, s = one_slot(c, h)
+        assert draft(c, h, vid, s["id"]).status_code == 503
+
+    c = make_client(ai_daily_limit_per_user=1)
+    register(c, "b@example.com")
+    h = login(c, "b@example.com")
+    vid, s = one_slot(c, h)
+    assert draft(c, h, vid, s["id"]).status_code == 200
+    assert draft(c, h, vid, s["id"]).status_code == 429
+
+
+def test_warnings_show_up_on_slots_and_follow_the_draft(client, alice):
+    vid, s = one_slot(client, alice)
+    sid = s["id"]
+    assert s["warnings"] == []
+    r = patch(client, alice, vid, sid, platform="x", draft="a" * 300).json()
+    assert any("over X's 280 limit" in w for w in r["warnings"])
+    assert patch(client, alice, vid, sid, draft="short and fine").json()["warnings"] == []
+    r = patch(client, alice, vid, sid, draft="We grew [client result] in 90 days").json()
+    assert any("placeholder" in w for w in r["warnings"])
+    assert all("warnings" in i for i in slots(client, alice, vid))
+
+
+def test_cannot_approve_while_placeholders_remain(client, alice):
+    vid, s = one_slot(client, alice)
+    sid = s["id"]
+    patch(client, alice, vid, sid, draft="We grew [client result] in [number] weeks", status="drafted")
+    blocked = patch(client, alice, vid, sid, status="approved")
+    assert blocked.status_code == 400 and "[client result]" in blocked.json()["detail"]
+    assert patch(client, alice, vid, sid, status="in_review").status_code == 200  # review can still happen
+    assert patch(client, alice, vid, sid, status="approved").status_code == 400
+    assert patch(client, alice, vid, sid, draft="We grew 40% in 12 weeks", status="approved").json()["status"] == "approved"

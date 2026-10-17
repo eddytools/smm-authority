@@ -62,6 +62,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | POST | `/ventures/{id}/plan/generate` (`start_date`, `period=week\|month`, `timezone`, `mix`, `replace`) | owner or admin |
 | GET | `/ventures/{id}/plan` (`start`, `end`, `status`, `include_archived`) | owner or admin |
 | POST / PATCH / DELETE | `/ventures/{id}/plan/slots[/{slot}]` | owner or admin |
+| POST | `/ventures/{id}/plan/slots/{slot}/draft` (AI draft, not saved) | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -118,6 +119,20 @@ A draft is required before a post leaves Idea, nothing can be Scheduled without 
 are read-only. Regenerating asks for confirmation and only replaces untouched ideas: anything the user edited, moved
 (dragged posts get a 🔒) or locked is kept.
 
+## Drafting studio
+
+**Draft with AI** on a planned post writes a draft for that platform and post type in the venture's voice (tone, do/don't,
+up to three writing samples), grounded in the post's topic, pillar and the linked feed article. It is on-demand, counts
+against the daily AI limit, and returns the draft without saving it: the author reviews, edits and saves, and the
+status pipeline still requires a human to approve. It also returns alternative opening lines and a short note on the angle.
+
+Safeguards live in code, not in the prompt (`app/drafting.py`):
+- the model is told never to invent statistics, client results or quotes, and to leave a `[placeholder]` instead;
+  **a post with unfilled `[placeholders]` cannot be approved, scheduled or published**;
+- advisory warnings on every draft: over the platform's limit (X is checked per post, and per part in a numbered
+  thread; LinkedIn 3,000; Instagram 2,200), links on Reddit, too many LinkedIn hashtags;
+- the editor shows a live character count against the limit.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
@@ -143,8 +158,11 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   commercial use. Plan to move to Reddit's OAuth API with a registered app before launch.
 - Not built yet: X and Google Trends sources (they need paid API access), per-source "dismissals tune relevance",
   turning a feed item into a post idea, and an opt-in schedule for AI scoring.
-- The planner schedules and tracks posts but does **not publish** anything yet: "Published" is set by hand. Drafting
-  with AI in the user's voice, auto-publishing to LinkedIn/X, and performance tracking are the next slices.
+- The planner schedules and tracks posts but does **not publish** anything yet: "Published" is set by hand.
+  Auto-publishing to LinkedIn/X and performance tracking are the next slices.
+- Draft quality has not been evaluated with the real model (no API key in the build environment): the prompt, the
+  context it receives and the safeguards are tested, the writing itself is not. Review a few real drafts, and consider
+  an eval set, before trusting it at scale. Quick replies to forum questions are not built yet.
 - Best-time windows and the month rhythm are assumed defaults, not measured data; tune them once real results exist.
 - The planner UI has no "add a post" button yet (the API supports it).
 - SQLite is for development; production should use Postgres (set `SMM_DATABASE_URL`).

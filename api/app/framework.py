@@ -131,3 +131,23 @@ TRANSITIONS: dict[SlotStatus, set[SlotStatus]] = {
 }
 DRAFT_REQUIRED = {S.drafted, S.in_review, S.approved, S.scheduled, S.published, S.analysed}
 READ_ONLY = {S.published, S.analysed, S.archived}  # content can't change once it went out
+
+
+# --- drafting (PRD F9) -------------------------------------------------------------
+
+# Hard-ish limits used for deterministic warnings. X counts characters per post (threads are checked per part).
+CHAR_LIMIT: dict[str, int] = {"x": 280, "linkedin": 3000, "instagram": 2200, "youtube": 5000, "reddit": 40000}
+
+# What a good post looks like on each platform: handed to the model as instructions, never enforced by it.
+PLATFORM_STYLE: dict[str, str] = {
+    "linkedin": "LinkedIn post. A strong first line that earns the 'see more' click, short paragraphs of 1-2 sentences, "
+    "roughly 900-1,300 characters, a clear point of view, at most 3 hashtags at the end, no emoji spam.",
+    "x": "X post. One post of 280 characters or fewer, OR a numbered thread (start each part with '1/', '2/', ...) with every part "
+    "280 characters or fewer. Hook first, no hashtags unless essential.",
+    "reddit": "Reddit post or comment. Conversational and genuinely helpful, no marketing tone, no hype, no links or self-promotion "
+    "unless the community clearly allows them. Lead with the useful answer or story.",
+    "instagram": "Instagram caption. A hook in the first line, a friendly tone, short lines, a call to action, 3-5 relevant hashtags at the end.",
+    "youtube": "Short-form video script (30-60 seconds). Format as HOOK (first 3 seconds), BODY (3 short beats), CTA. Spoken language.",
+    "blog": "Blog article draft: a headline, a one-paragraph intro, 3-5 section headings each with a short outline of the point, and a closing takeaway.",
+    "newsletter": "Newsletter edition: a subject line, a personal opening, one main idea developed in 3-4 short paragraphs, and one call to action.",
+}

@@ -123,3 +123,10 @@ td input[type=checkbox], td input[type=radio] { width: auto; margin: 0; }
 .step.now { background: var(--brand); color: var(--brand-text); border-color: var(--brand); font-weight: 700; }
 table.list td, table.list th { font-size: .88rem; vertical-align: top; }
 @media (max-width: 800px) { .week-grid { grid-template-columns: 1fr; } .day { min-height: 0; } }
+
+.draft-meta { margin: -.4rem 0 .5rem; text-align: right; }
+.warnings { margin: 0 0 .7rem; padding: .5rem .8rem .5rem 1.6rem; background: var(--mofu-bg); border-radius: 7px; font-size: .85rem; }
+.ai-draft { display: flex; gap: .5rem; margin-bottom: .6rem; flex-wrap: wrap; }
+.ai-draft input { flex: 1; min-width: 220px; margin: 0; }
+.hooks { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-bottom: .7rem; }
+button.hook { font-size: .8rem; text-align: left; max-width: 100%; }

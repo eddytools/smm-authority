@@ -109,3 +109,19 @@ def _Scores_cls():
     from app.ai import _Scores
 
     return _Scores
+
+
+def test_draft_post_cleans_output_and_rejects_empty():
+    from app.ai import _PostDraft
+
+    parsed = _PostDraft(post="  Final post text  ", alternative_hooks=["Hook A", " Hook A ", "Hook B", "Hook C", "Hook D", ""], notes=" Check the number. ")
+    client = StubClient(response(parsed))
+    out = AnthropicProvider(None, "m", client=client).draft_post({"post": {"topic": "t"}})
+    assert out.post == "Final post text" and out.hooks == ["Hook A", "Hook B", "Hook C"] and out.notes == "Check the number."
+    assert out.input_tokens == 11 and client.kwargs["output_format"] is _PostDraft
+    assert "<data>" in client.kwargs["messages"][0]["content"] and "Never invent facts" in client.kwargs["system"]
+
+    with pytest.raises(AIError, match="empty draft"):
+        AnthropicProvider(None, "m", client=StubClient(response(_PostDraft(post="  ", alternative_hooks=[], notes="")))).draft_post({})
+    with pytest.raises(AIError, match="declined"):
+        AnthropicProvider(None, "m", client=StubClient(response(None, "refusal"))).draft_post({})
