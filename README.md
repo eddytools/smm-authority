@@ -58,6 +58,10 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/feed` (`status=active\|new\|saved\|dismissed`, `source_id`, `limit`, `offset`) | owner or admin |
 | PATCH | `/ventures/{id}/feed/{item}` (save / dismiss / restore) | owner or admin |
 | POST | `/ventures/{id}/feed/refresh` (runs the ingest script now), `/ventures/{id}/feed/score` (on-demand AI) | owner or admin |
+| GET | `/planner/framework` (stages, post types, platform rules, status pipeline) | any signed-in user |
+| POST | `/ventures/{id}/plan/generate` (`start_date`, `period=week\|month`, `timezone`, `mix`, `replace`) | owner or admin |
+| GET | `/ventures/{id}/plan` (`start`, `end`, `status`, `include_archived`) | owner or admin |
+| POST / PATCH / DELETE | `/ventures/{id}/plan/slots[/{slot}]` | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -95,6 +99,25 @@ feed shows up in the dashboard instead of failing silently, and one bad source n
 including redirects must resolve to a public IP, the connection is pinned to the validated IP while TLS still verifies the
 hostname, and redirects/size/time are capped.
 
+## Content planner
+
+Built on the three-stage funnel and ten post types (`app/framework.py`): **TOFU / growth** (newsjacking, awareness,
+educational, spectacle), **MOFU / trust** (story, short video, lead magnet), **BOFU / selling** (conversion, objection,
+product demo). Generating a **week or month** is plain deterministic code (`app/planner.py`), no AI:
+
+- one slot per planned post, using each platform's weekly cadence from the Authority setup and assumed best-time windows
+  (tunable in `PLATFORM_SCHEDULE`), in the user's timezone;
+- a funnel mix (default 50/30/20, editable) with a month rhythm of growth, then trust, then capture, then convert;
+  within each week growth posts come before selling posts, and every stage and pillar appears;
+- platform rules (Reddit gets no promotional or video posts; blog/newsletter get no short video);
+- real topics from the trend feed (saved items first), each used once; other slots get the framework's guidance as a prompt;
+- CTAs from the offer links, and reserved reactive (newsjacking) slots flagged with ⚡.
+
+Status pipeline: Idea → Drafted → In review → Approved → Scheduled → Published → Analysed (plus Skipped, Archived).
+A draft is required before a post leaves Idea, nothing can be Scheduled without being Approved first, and published posts
+are read-only. Regenerating asks for confirmation and only replaces untouched ideas: anything the user edited, moved
+(dragged posts get a 🔒) or locked is kept.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
@@ -120,4 +143,8 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   commercial use. Plan to move to Reddit's OAuth API with a registered app before launch.
 - Not built yet: X and Google Trends sources (they need paid API access), per-source "dismissals tune relevance",
   turning a feed item into a post idea, and an opt-in schedule for AI scoring.
-- Planner and tracking attach to a venture next.
+- The planner schedules and tracks posts but does **not publish** anything yet: "Published" is set by hand. Drafting
+  with AI in the user's voice, auto-publishing to LinkedIn/X, and performance tracking are the next slices.
+- Best-time windows and the month rhythm are assumed defaults, not measured data; tune them once real results exist.
+- The planner UI has no "add a post" button yet (the API supports it).
+- SQLite is for development; production should use Postgres (set `SMM_DATABASE_URL`).

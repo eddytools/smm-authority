@@ -105,6 +105,39 @@ export interface RefreshResult {
   sources: { source_id: number; status: string; new_items: number; error: string | null }[];
 }
 
+export type Stage = "tofu" | "mofu" | "bofu";
+export type SlotStatus = "idea" | "drafted" | "in_review" | "approved" | "scheduled" | "published" | "analysed" | "skipped" | "archived";
+
+export interface Framework {
+  stages: { key: Stage; goal: string; post_types: { key: string; label: string; guidance: string; platforms: string[] }[] }[];
+  statuses: SlotStatus[];
+  transitions: Record<SlotStatus, SlotStatus[]>;
+}
+
+export interface PlanSlot {
+  id: number;
+  venture_id: number;
+  scheduled_at: string;
+  platform: string;
+  post_type: string;
+  stage: Stage;
+  pillar: string | null;
+  topic: string;
+  cta: string | null;
+  draft: string | null;
+  status: SlotStatus;
+  locked: boolean;
+  reactive: boolean;
+  source_item_id: number | null;
+}
+
+export interface GenerateResult {
+  created: number;
+  removed: number;
+  kept: number;
+  by_stage: Record<Stage, number>;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -206,6 +239,14 @@ export const api = {
   setItemStatus: (vid: number, id: number, status: ItemStatus) => request<FeedItem>(`/ventures/${vid}/feed/${id}`, json("PATCH", { status })),
   refreshFeed: (vid: number) => request<RefreshResult>(`/ventures/${vid}/feed/refresh`, { method: "POST" }),
   scoreFeed: (vid: number) => request<{ scored: number }>(`/ventures/${vid}/feed/score`, { method: "POST" }),
+
+  getFramework: () => request<Framework>("/planner/framework"),
+  listPlan: (vid: number) => request<PlanSlot[]>(`/ventures/${vid}/plan?limit=500`),
+  generatePlan: (vid: number, data: { start_date: string; period: "week" | "month"; timezone: string; mix: Record<Stage, number>; replace: boolean }) =>
+    request<GenerateResult>(`/ventures/${vid}/plan/generate`, json("POST", data)),
+  updateSlot: (vid: number, id: number, data: Partial<Pick<PlanSlot, "scheduled_at" | "platform" | "post_type" | "topic" | "pillar" | "cta" | "draft" | "status" | "locked">>) =>
+    request<PlanSlot>(`/ventures/${vid}/plan/slots/${id}`, json("PATCH", data)),
+  deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>

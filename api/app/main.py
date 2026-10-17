@@ -8,7 +8,7 @@ from app.ai import AIProvider, AnthropicProvider
 from app.config import Settings, get_settings
 from app.db import Base, make_engine
 from app.jobs.ingest import Fetcher, build_fetcher
-from app.routers import auth, brief, feed, users, ventures
+from app.routers import auth, brief, feed, plan, users, ventures
 from app.seed import ensure_admin
 
 
@@ -49,6 +49,8 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
     app.include_router(ventures.router)
     app.include_router(brief.router)
     app.include_router(feed.router)
+    app.include_router(plan.router)
+    app.include_router(plan.framework_router)
 
     @app.get("/health", tags=["meta"])
     def health():

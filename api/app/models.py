@@ -1,14 +1,35 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+from app.framework import PostType, SlotStatus, Stage
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """Always timezone-aware UTC in Python. SQLite drops tzinfo on read, which would make the API emit
+    times the browser interprets as local; this keeps behaviour identical on SQLite and Postgres."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("naive datetime not allowed; use timezone-aware values")
+        return value.astimezone(timezone.utc)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 class Role(str, enum.Enum):
@@ -25,8 +46,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20), default=Role.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     ventures: Mapped[list["Venture"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
 
@@ -44,12 +65,13 @@ class Venture(Base):
     niche: Mapped[str | None] = mapped_column(String(200), default=None)
     website_url: Mapped[str | None] = mapped_column(String(500), default=None)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     owner: Mapped[User] = relationship(back_populates="ventures", lazy="joined")
     briefs: Mapped[list["BriefVersion"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
     sources: Mapped[list["Source"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
+    plan_slots: Mapped[list["PlanSlot"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
 
     @property
     def owner_email(self) -> str:
@@ -67,7 +89,7 @@ class BriefVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
     data: Mapped[dict] = mapped_column(JSON)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     venture: Mapped[Venture] = relationship(back_populates="briefs")
 
@@ -84,7 +106,7 @@ class AIUsage(Base):
     model: Mapped[str] = mapped_column(String(100))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
 
 
 class SourceType(str, enum.Enum):
@@ -105,10 +127,10 @@ class Source(Base):
     target: Mapped[str] = mapped_column(String(500))
     label: Mapped[str | None] = mapped_column(String(120), default=None)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_fetched_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
     last_status: Mapped[str | None] = mapped_column(String(20), default=None)  # "ok" | "error"
     last_error: Mapped[str | None] = mapped_column(String(300), default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     venture: Mapped[Venture] = relationship(back_populates="sources")
     items: Mapped[list["FeedItem"]] = relationship(back_populates="source", cascade="all, delete-orphan", passive_deletes=True)
@@ -125,6 +147,7 @@ class FeedItem(Base):
     __table_args__ = (
         UniqueConstraint("venture_id", "url_hash", name="uq_feed_venture_urlhash"),
         Index("ix_feed_venture_status", "venture_id", "status"),
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -135,13 +158,13 @@ class FeedItem(Base):
     title: Mapped[str] = mapped_column(String(500))
     summary: Mapped[str | None] = mapped_column(Text, default=None)
     author: Mapped[str | None] = mapped_column(String(200), default=None)
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    published_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    fetched_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     engagement: Mapped[int] = mapped_column(Integer, default=0)  # upvotes + comments where the source exposes them
     rule_score: Mapped[float] = mapped_column(Float, default=0.0)  # deterministic 0-100, set by the ingest script
     relevance: Mapped[int | None] = mapped_column(Integer, default=None)  # AI 0-100, only when the user asked for scoring
     why_it_matters: Mapped[str | None] = mapped_column(String(400), default=None)
-    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    scored_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
     status: Mapped[ItemStatus] = mapped_column(Enum(ItemStatus, native_enum=False, length=20), default=ItemStatus.new)
 
     source: Mapped[Source] = relationship(back_populates="items", lazy="joined")
@@ -153,3 +176,30 @@ class FeedItem(Base):
     @property
     def source_label(self) -> str:
         return self.source.label or self.source.target
+
+
+class PlanSlot(Base):
+    """One planned post on the calendar. Content (`topic`, `draft`) is edited by the user; the planner only proposes."""
+
+    __tablename__ = "plan_slots"
+    # sqlite_autoincrement: never reuse the id of a deleted slot, so a stale id in a browser can't hit a different slot
+    __table_args__ = (Index("ix_plan_venture_time", "venture_id", "scheduled_at"), {"sqlite_autoincrement": True})
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"))
+    scheduled_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    platform: Mapped[str] = mapped_column(String(20))
+    post_type: Mapped[PostType] = mapped_column(Enum(PostType, native_enum=False, length=20))
+    stage: Mapped[Stage] = mapped_column(Enum(Stage, native_enum=False, length=10))
+    pillar: Mapped[str | None] = mapped_column(String(300), default=None)
+    topic: Mapped[str] = mapped_column(String(300))
+    cta: Mapped[str | None] = mapped_column(String(500), default=None)
+    draft: Mapped[str | None] = mapped_column(Text, default=None)
+    status: Mapped[SlotStatus] = mapped_column(Enum(SlotStatus, native_enum=False, length=20), default=SlotStatus.idea)
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)  # regenerating the plan never removes locked slots
+    reactive: Mapped[bool] = mapped_column(Boolean, default=False)  # reserved for a timely/reactive post
+    source_item_id: Mapped[int | None] = mapped_column(ForeignKey("feed_items.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    venture: Mapped[Venture] = relationship(back_populates="plan_slots")

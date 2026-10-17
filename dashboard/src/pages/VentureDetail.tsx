@@ -6,7 +6,6 @@ import BriefEditor from "../components/BriefEditor";
 import VentureForm from "../components/VentureForm";
 
 const UPCOMING = [
-  ["Content planner", "Weekly and monthly TOFU / MOFU / BOFU calendar"],
   ["Performance", "What worked, what didn't, and leads by post"],
 ];
 
@@ -92,6 +91,10 @@ export default function VentureDetail() {
         <Link to={`/ventures/${venture.id}/feed`} className="card linkcard">
           <h4>Trend feed</h4>
           <p className="muted small">Topics from RSS, Reddit and Google News, ranked for your niche.</p>
+        </Link>
+        <Link to={`/ventures/${venture.id}/plan`} className="card linkcard">
+          <h4>Content planner</h4>
+          <p className="muted small">A weekly or monthly TOFU / MOFU / BOFU calendar built from your setup.</p>
         </Link>
       </div>
 
