@@ -43,7 +43,8 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
         yield
         engine.dispose()
 
-    app = FastAPI(title="SMM Authority API", version="0.1.0", lifespan=lifespan)
+    docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.env == "production" else {}  # no public API explorer in production
+    app = FastAPI(title="SMM Authority API", version="0.1.0", lifespan=lifespan, **docs)
     app.state.settings = settings
     app.state.login_limiter = LoginLimiter(settings.login_max_failures, settings.login_window_seconds)
     app.state.engine = engine

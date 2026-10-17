@@ -91,3 +91,20 @@ def test_bootstrap_admin_is_not_overwritten_on_restart(client, admin_headers):
     assert login(client, ADMIN["email"], ADMIN["password"])
     r = client.post("/auth/login", json={"email": ADMIN["email"], "password": "a-different-password"})
     assert r.status_code == 401
+
+
+def test_api_explorer_is_off_in_production_and_on_in_development():
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+
+    def status(env):
+        settings = Settings(env=env, database_url="sqlite://", secret_key="x" * 40)
+        app = create_app(settings)
+        if env == "production":  # production refuses to build tables itself; this test only needs the routes
+            return TestClient(app).get("/docs").status_code, TestClient(app).get("/openapi.json").status_code
+        return TestClient(app).get("/docs").status_code, TestClient(app).get("/openapi.json").status_code
+
+    assert status("production") == (404, 404)
+    assert status("development") == (200, 200)

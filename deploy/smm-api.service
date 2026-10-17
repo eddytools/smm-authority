@@ -1,0 +1,21 @@
+[Unit]
+Description=SMM Authority API
+After=network.target
+
+[Service]
+User=smm
+Group=smm
+WorkingDirectory=/opt/smm/api
+EnvironmentFile=/etc/smm/smm.env
+ExecStartPre=/opt/smm/api/.venv/bin/alembic upgrade head
+ExecStart=/opt/smm/api/.venv/bin/uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8010 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --root-path /api
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/smm
+
+[Install]
+WantedBy=multi-user.target

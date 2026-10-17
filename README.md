@@ -3,6 +3,8 @@
 SaaS that helps prospects build online authority, grow their brand and convert attention into leads.
 See [`docs/PRD.md`](docs/PRD.md) and [`docs/SCOPE.md`](docs/SCOPE.md).
 
+> **Deploying?** See [docs/DEPLOY.md](docs/DEPLOY.md) (one VPS, nginx + systemd, HTTPS with certbot, install and update scripts in `deploy/`).
+
 ## Layout
 
 | Folder | What | Stack |

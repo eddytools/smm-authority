@@ -1,0 +1,20 @@
+[Unit]
+Description=SMM Authority scheduled-post publisher
+After=smm-api.service
+
+[Service]
+User=smm
+Group=smm
+WorkingDirectory=/opt/smm/api
+EnvironmentFile=/etc/smm/smm.env
+ExecStart=/opt/smm/api/.venv/bin/python -m app.jobs.publish_due --loop 60
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/smm
+
+[Install]
+WantedBy=multi-user.target

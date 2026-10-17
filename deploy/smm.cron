@@ -1,0 +1,8 @@
+# /etc/cron.d/smm
+SHELL=/bin/bash
+# Trend feed: pull every source, three times a day
+15 */8 * * *  smm  set -a; . /etc/smm/smm.env; set +a; cd /opt/smm/api && .venv/bin/python -m app.jobs.ingest >> /var/log/smm/ingest.log 2>&1
+# Results for posts published to X
+25 * * * *    smm  set -a; . /etc/smm/smm.env; set +a; cd /opt/smm/api && .venv/bin/python -m app.jobs.pull_metrics >> /var/log/smm/metrics.log 2>&1
+# Nightly database backup, keeping 14 days
+40 3 * * *    smm  /opt/smm/deploy/backup.sh >> /var/log/smm/backup.log 2>&1
