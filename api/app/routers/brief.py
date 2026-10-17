@@ -1,14 +1,13 @@
-from datetime import datetime, timedelta, timezone
-
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.access import get_accessible_venture
 from app.ai import AIError, AIProvider
+from app.ai_budget import ensure_budget, record_usage
 from app.brief_schemas import BriefData, BriefOut, BriefSuggestion, BriefVersionSummary, SuggestRequest
 from app.deps import CurrentUser, DbSession, SettingsDep
-from app.models import AIUsage, BriefVersion, Role
+from app.models import BriefVersion
 
 router = APIRouter(prefix="/ventures/{venture_id}/brief", tags=["authority brief"])
 
@@ -76,11 +75,7 @@ def suggest(venture_id: int, body: SuggestRequest, request: Request, user: Curre
     if ai is None:
         raise HTTPException(503, "AI suggestions are not configured on this server")
 
-    if user.role != Role.admin:
-        since = datetime.now(timezone.utc) - timedelta(hours=24)
-        used = db.scalar(select(func.count()).select_from(AIUsage).where(AIUsage.user_id == user.id, AIUsage.created_at >= since))
-        if used >= settings.ai_daily_limit_per_user:
-            raise HTTPException(429, f"Daily AI limit reached ({settings.ai_daily_limit_per_user} requests). Try again tomorrow.")
+    ensure_budget(db, user, settings)
 
     try:
         result = ai.suggest_brief(
@@ -90,15 +85,6 @@ def suggest(venture_id: int, body: SuggestRequest, request: Request, user: Curre
     except AIError as exc:
         raise HTTPException(exc.status_code, exc.message)
 
-    db.add(
-        AIUsage(
-            user_id=user.id,
-            venture_id=venture.id,
-            feature="brief_suggest",
-            model=result.model,
-            input_tokens=result.input_tokens,
-            output_tokens=result.output_tokens,
-        )
-    )
+    record_usage(db, user, venture.id, "brief_suggest", result)
     db.commit()
     return BriefSuggestion(ideation=result.ideation, platforms=result.platforms, rationale=result.rationale)

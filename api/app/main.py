@@ -7,11 +7,12 @@ from sqlalchemy.orm import sessionmaker
 from app.ai import AIProvider, AnthropicProvider
 from app.config import Settings, get_settings
 from app.db import Base, make_engine
-from app.routers import auth, brief, users, ventures
+from app.jobs.ingest import Fetcher, build_fetcher
+from app.routers import auth, brief, feed, users, ventures
 from app.seed import ensure_admin
 
 
-def create_app(settings: Settings | None = None, ai: AIProvider | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, ai: AIProvider | None = None, fetcher: Fetcher | None = None) -> FastAPI:
     settings = settings or get_settings()
     settings.assert_safe()
 
@@ -34,6 +35,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None) -
     if ai is None and settings.anthropic_api_key:
         ai = AnthropicProvider(settings.anthropic_api_key, settings.ai_model)
     app.state.ai = ai
+    app.state.fetcher = fetcher or build_fetcher(settings)
 
     app.add_middleware(
         CORSMiddleware,
@@ -46,6 +48,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None) -
     app.include_router(users.router)
     app.include_router(ventures.router)
     app.include_router(brief.router)
+    app.include_router(feed.router)
 
     @app.get("/health", tags=["meta"])
     def health():

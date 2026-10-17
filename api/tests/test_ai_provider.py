@@ -93,3 +93,19 @@ def test_provider_maps_sdk_errors(exc, status):
     with pytest.raises(AIError) as e:
         AnthropicProvider(None, "m", client=StubClient(raises=exc)).suggest_brief({}, SuggestRequest())
     assert e.value.status_code == status
+
+
+def test_score_feed_clamps_ignores_unknown_ids_and_dedupes():
+    from app.ai import _ItemScore, _Scores
+
+    parsed = _Scores(items=[_ItemScore(id=1, relevance=150, why="  great  "), _ItemScore(id=2, relevance=-5, why="meh"), _ItemScore(id=99, relevance=50, why="ghost"), _ItemScore(id=1, relevance=10, why="dup")])
+    client = StubClient(response(parsed))
+    out = AnthropicProvider(None, "m", client=client).score_feed({"name": "A"}, None, [{"id": 1, "title": "t"}, {"id": 2, "title": "u"}])
+    assert out.scores == {1: (100, "great"), 2: (0, "meh")}
+    assert out.input_tokens == 11 and client.kwargs["output_format"] is _Scores_cls()
+
+
+def _Scores_cls():
+    from app.ai import _Scores
+
+    return _Scores

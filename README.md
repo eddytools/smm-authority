@@ -54,6 +54,10 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET/PUT | `/ventures/{id}/brief` (PUT appends a new version) | owner or admin |
 | GET | `/ventures/{id}/brief/versions`, `/ventures/{id}/brief/versions/{n}` | owner or admin |
 | POST | `/ventures/{id}/brief/suggest` (AI draft, not saved) | owner or admin |
+| GET/POST | `/ventures/{id}/sources`, PATCH/DELETE `/ventures/{id}/sources/{sid}` | owner or admin |
+| GET | `/ventures/{id}/feed` (`status=active\|new\|saved\|dismissed`, `source_id`, `limit`, `offset`) | owner or admin |
+| PATCH | `/ventures/{id}/feed/{item}` (save / dismiss / restore) | owner or admin |
+| POST | `/ventures/{id}/feed/refresh` (runs the ingest script now), `/ventures/{id}/feed/score` (on-demand AI) | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -69,11 +73,34 @@ automatically, and is capped per non-admin user per 24h (`SMM_AI_DAILY_LIMIT_PER
 `app/ai.py` (Anthropic SDK, structured output, model `SMM_AI_MODEL`). Without `ANTHROPIC_API_KEY` the endpoint
 returns 503 and the rest of the app is unaffected. Token usage is recorded in `ai_usage`.
 
+## Trend feed
+
+Each venture has sources: **RSS URLs, subreddits, and Google News queries** (up to 20). Items are ranked for the niche
+without any AI: the ingest script scores each one 0-100 from keyword overlap with the venture's Authority Brief (50%),
+freshness (30%) and engagement (20%). **Score with AI** (optional, on request, counts against the daily AI limit) sends only
+the best unscored items from the last 14 days, in one call, and stores a 0-100 relevance and a one-line "why it matters".
+Items are deduplicated by normalised URL, can be saved or dismissed (dismissed items do not come back), and unsaved items
+are pruned after `SMM_FEED_RETENTION_DAYS` (30).
+
+The recurring work is a plain script, not an AI call. Schedule it, for example hourly:
+
+```cron
+0 * * * *  cd /srv/smm/api && .venv/bin/python -m app.jobs.ingest >> /var/log/smm-ingest.log 2>&1
+```
+
+`python -m app.jobs.ingest --venture 7` runs one venture. Each source records `last_status` / `last_error`, so a broken
+feed shows up in the dashboard instead of failing silently, and one bad source never blocks the others.
+
+**Fetching user-supplied URLs is SSRF-guarded** (`app/fetch.py`): http(s) only, no embedded credentials, every hop
+including redirects must resolve to a public IP, the connection is pinned to the validated IP while TLS still verifies the
+hostname, and redirects/size/time are capped.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
 `ACCESS_TOKEN_MINUTES`, `CORS_ORIGINS` (comma-separated), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_REGISTRATION`,
-`AI_MODEL`, `AI_DAILY_LIMIT_PER_USER`, and `ANTHROPIC_API_KEY` (also accepted as `SMM_ANTHROPIC_API_KEY`).
+`AI_MODEL`, `AI_DAILY_LIMIT_PER_USER`, `AI_SCORE_BATCH` (items per scoring call, 20), `FEED_RETENTION_DAYS`,
+`REFRESH_MIN_INTERVAL_SECONDS` (60), `FETCH_USER_AGENT`, and `ANTHROPIC_API_KEY` (also accepted as `SMM_ANTHROPIC_API_KEY`).
 With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_KEY` of 32+ characters.
 
 ## Known limitations of this first slice
@@ -85,4 +112,12 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   it is covered by tests with a stubbed client and a schema check. Do one real call before relying on it.
 - Refusal fallbacks (`fallbacks`) are not enabled: refusals surface as a 502 with a clear message. Add them if
   suggestions ever get declined in practice.
-- Trend feed, planner and tracking attach to a venture next.
+- **Feed fetching has not been run against the real internet from this repo.** The build sandbox only reaches the web
+  through an HTTPS proxy, and the fetcher connects directly (needed for its SSRF guard). It is tested against local
+  HTTP and HTTPS servers (including certificate verification) and with canned feeds, not live Reddit/Google. Run one
+  refresh on a real server before relying on it, and note it will not work on a host that only allows egress via a proxy.
+- Reddit's public JSON endpoint is rate-limited and often blocked from datacenter IPs, and Reddit's terms restrict
+  commercial use. Plan to move to Reddit's OAuth API with a registered app before launch.
+- Not built yet: X and Google Trends sources (they need paid API access), per-source "dismissals tune relevance",
+  turning a feed item into a post idea, and an opt-in schedule for AI scoring.
+- Planner and tracking attach to a venture next.

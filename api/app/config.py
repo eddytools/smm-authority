@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SMM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"))
     ai_model: str = "claude-opus-5-5"
     ai_daily_limit_per_user: int = 20
+    # Feed ingestion
+    fetch_user_agent: str = "smm-authority/0.1 (+https://github.com/eddytools/smm-authority)"
+    allow_private_fetch: bool = False  # tests/dev only: lets the fetcher reach localhost/private networks
+    feed_retention_days: int = 30
+    refresh_min_interval_seconds: int = 60
+    ai_score_batch: int = 20
 
     @property
     def cors_origin_list(self) -> list[str]:

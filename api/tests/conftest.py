@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.ai import Suggestion
+from app.ai import ScoreResult, Suggestion
 from app.brief_schemas import Ideation, Platform, PlatformPlan
 from app.config import Settings
 from app.main import create_app
@@ -27,6 +27,13 @@ class FakeAI:
         )
 
 
+    def score_feed(self, venture, brief, items):
+        self.score_calls = getattr(self, "score_calls", []) + [(venture, brief, items)]
+        # deterministic: longer titles score higher, so tests can assert ordering
+        scores = {i["id"]: (min(len(i["title"]), 100), f"why {i['id']}") for i in items}
+        return ScoreResult(scores=scores, input_tokens=200, output_tokens=80, model=self.model)
+
+
 def make_settings(**overrides):
     base = dict(
         database_url="sqlite://",
@@ -44,8 +51,8 @@ def fake_ai():
 
 
 @pytest.fixture
-def client(fake_ai):
-    with TestClient(create_app(make_settings(), ai=fake_ai)) as c:
+def client(fake_ai, fetcher):
+    with TestClient(create_app(make_settings(), ai=fake_ai, fetcher=fetcher)) as c:
         yield c
 
 
@@ -76,3 +83,63 @@ def alice(client):
 def bob(client):
     register(client, "bob@example.com", name="Bob")
     return login(client, "bob@example.com")
+
+
+RSS = b"""<?xml version="1.0"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Blog</title>
+<item><title>Founder-led growth playbook for SaaS</title><link>https://blog.example/growth?utm_source=x</link>
+<description>&lt;p&gt;How SaaS founders win inbound leads&lt;/p&gt;</description><pubDate>Mon, 13 Oct 2025 08:00:00 GMT</pubDate><dc:creator>Ann</dc:creator></item>
+<item><title>Ten pasta recipes</title><link>https://blog.example/pasta</link><description>Dinner ideas</description></item>
+<item><title>No link here</title></item>
+</channel></rss>"""
+
+
+def fresh_rss() -> bytes:
+    """Same shape as RSS but dated relative to now, so age-based rules (14-day scoring window) don't rot."""
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    day_ago = format_datetime(datetime.now(timezone.utc) - timedelta(days=1))
+    return RSS.replace(b"Mon, 13 Oct 2025 08:00:00 GMT", day_ago.encode())
+
+
+class FakeFetcher:
+    """Stands in for the network: url -> bytes, or an Exception to raise."""
+
+    def __init__(self):
+        self.responses = {}
+        self.calls = []
+
+    def __call__(self, url, accept):
+        from app.fetch import FetchResult
+
+        self.calls.append(url)
+        value = self.responses.get(url)
+        if value is None:
+            from app.fetch import FetchError
+
+            raise FetchError("HTTP 404")
+        if isinstance(value, Exception):
+            raise value
+        return FetchResult(200, value, url, "text/xml")
+
+
+@pytest.fixture
+def fetcher():
+    return FakeFetcher()
+
+
+@pytest.fixture
+def make_client(fake_ai, fetcher):
+    """Factory so a test can tweak settings (limits, intervals) while keeping the fakes."""
+    stack = []
+
+    def factory(**settings):
+        c = TestClient(create_app(make_settings(**settings), ai=fake_ai, fetcher=fetcher))
+        c.__enter__()
+        stack.append(c)
+        return c
+
+    yield factory
+    for c in stack:
+        c.__exit__(None, None, None)

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -49,6 +49,7 @@ class Venture(Base):
 
     owner: Mapped[User] = relationship(back_populates="ventures", lazy="joined")
     briefs: Mapped[list["BriefVersion"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
+    sources: Mapped[list["Source"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
 
     @property
     def owner_email(self) -> str:
@@ -84,3 +85,71 @@ class AIUsage(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SourceType(str, enum.Enum):
+    rss = "rss"
+    reddit = "reddit"
+    google_news = "google_news"
+
+
+class Source(Base):
+    """Something the ingest job pulls from for one venture: an RSS URL, a subreddit, or a Google News query."""
+
+    __tablename__ = "sources"
+    __table_args__ = (UniqueConstraint("venture_id", "type", "target", name="uq_source_venture_type_target"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    type: Mapped[SourceType] = mapped_column(Enum(SourceType, native_enum=False, length=20))
+    target: Mapped[str] = mapped_column(String(500))
+    label: Mapped[str | None] = mapped_column(String(120), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_status: Mapped[str | None] = mapped_column(String(20), default=None)  # "ok" | "error"
+    last_error: Mapped[str | None] = mapped_column(String(300), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    venture: Mapped[Venture] = relationship(back_populates="sources")
+    items: Mapped[list["FeedItem"]] = relationship(back_populates="source", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class ItemStatus(str, enum.Enum):
+    new = "new"
+    saved = "saved"
+    dismissed = "dismissed"
+
+
+class FeedItem(Base):
+    __tablename__ = "feed_items"
+    __table_args__ = (
+        UniqueConstraint("venture_id", "url_hash", name="uq_feed_venture_urlhash"),
+        Index("ix_feed_venture_status", "venture_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"))
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str] = mapped_column(String(1000))
+    url_hash: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[str | None] = mapped_column(Text, default=None)
+    author: Mapped[str | None] = mapped_column(String(200), default=None)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    engagement: Mapped[int] = mapped_column(Integer, default=0)  # upvotes + comments where the source exposes them
+    rule_score: Mapped[float] = mapped_column(Float, default=0.0)  # deterministic 0-100, set by the ingest script
+    relevance: Mapped[int | None] = mapped_column(Integer, default=None)  # AI 0-100, only when the user asked for scoring
+    why_it_matters: Mapped[str | None] = mapped_column(String(400), default=None)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    status: Mapped[ItemStatus] = mapped_column(Enum(ItemStatus, native_enum=False, length=20), default=ItemStatus.new)
+
+    source: Mapped[Source] = relationship(back_populates="items", lazy="joined")
+
+    @property
+    def source_type(self) -> str:
+        return self.source.type.value
+
+    @property
+    def source_label(self) -> str:
+        return self.source.label or self.source.target

@@ -6,3 +6,4 @@ email-validator>=2.1
 pyjwt>=2.8
 pwdlib[argon2]>=0.2
 anthropic>=0.60
+defusedxml>=0.7

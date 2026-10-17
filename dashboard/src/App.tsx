@@ -5,6 +5,7 @@ import AdminUsers from "./pages/AdminUsers";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VentureDetail from "./pages/VentureDetail";
+import VentureFeed from "./pages/VentureFeed";
 import Ventures from "./pages/Ventures";
 
 function RequireAuth() {
@@ -35,6 +36,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<Ventures />} />
           <Route path="ventures/:id" element={<VentureDetail />} />
+          <Route path="ventures/:id/feed" element={<VentureFeed />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin/users" element={<AdminUsers />} />
           </Route>

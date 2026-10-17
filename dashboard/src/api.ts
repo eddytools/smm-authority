@@ -70,6 +70,41 @@ export interface BriefSuggestion {
   rationale: string;
 }
 
+export type SourceType = "rss" | "reddit" | "google_news";
+export interface Source {
+  id: number;
+  type: SourceType;
+  target: string;
+  label: string | null;
+  enabled: boolean;
+  last_fetched_at: string | null;
+  last_status: "ok" | "error" | null;
+  last_error: string | null;
+}
+
+export type ItemStatus = "new" | "saved" | "dismissed";
+export interface FeedItem {
+  id: number;
+  source_id: number;
+  source_type: SourceType;
+  source_label: string;
+  url: string;
+  title: string;
+  summary: string | null;
+  author: string | null;
+  published_at: string;
+  engagement: number;
+  rule_score: number;
+  relevance: number | null;
+  why_it_matters: string | null;
+  status: ItemStatus;
+}
+
+export interface RefreshResult {
+  new_items: number;
+  sources: { source_id: number; status: string; new_items: number; error: string | null }[];
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -110,8 +145,10 @@ function errorMessage(body: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail) && detail.length) {
     const first = detail[0] as { msg?: string; loc?: unknown[] };
+    const msg = (first.msg ?? fallback).replace(/^Value error, /, "");
     const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : undefined;
-    return field ? `${String(field)}: ${first.msg}` : (first.msg ?? fallback);
+    // "body" just means the whole request; only name an actual field
+    return typeof field === "string" && field !== "body" ? `${field}: ${msg}` : msg;
   }
   return fallback;
 }
@@ -160,6 +197,15 @@ export const api = {
   saveBrief: (ventureId: number, data: BriefData) => request<BriefVersion>(`/ventures/${ventureId}/brief`, json("PUT", data)),
   suggestBrief: (ventureId: number, inputs: Partial<BriefData>) =>
     request<BriefSuggestion>(`/ventures/${ventureId}/brief/suggest`, json("POST", inputs)),
+
+  listSources: (vid: number) => request<Source[]>(`/ventures/${vid}/sources`),
+  addSource: (vid: number, data: { type: SourceType; target: string }) => request<Source>(`/ventures/${vid}/sources`, json("POST", data)),
+  updateSource: (vid: number, id: number, data: { enabled: boolean }) => request<Source>(`/ventures/${vid}/sources/${id}`, json("PATCH", data)),
+  deleteSource: (vid: number, id: number) => request<void>(`/ventures/${vid}/sources/${id}`, { method: "DELETE" }),
+  listFeed: (vid: number, status: "new" | "saved" | "dismissed") => request<FeedItem[]>(`/ventures/${vid}/feed?status=${status}&limit=100`),
+  setItemStatus: (vid: number, id: number, status: ItemStatus) => request<FeedItem>(`/ventures/${vid}/feed/${id}`, json("PATCH", { status })),
+  refreshFeed: (vid: number) => request<RefreshResult>(`/ventures/${vid}/feed/refresh`, { method: "POST" }),
+  scoreFeed: (vid: number) => request<{ scored: number }>(`/ventures/${vid}/feed/score`, { method: "POST" }),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>
