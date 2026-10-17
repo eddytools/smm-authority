@@ -1,0 +1,49 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import sessionmaker
+
+from app.config import Settings, get_settings
+from app.db import Base, make_engine
+from app.routers import auth, users, ventures
+from app.seed import ensure_admin
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    settings.assert_safe()
+
+    engine = make_engine(settings.database_url)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # create_all is fine for the first slice; move to Alembic migrations before the schema stabilises.
+        Base.metadata.create_all(engine)
+        with session_factory() as db:
+            ensure_admin(db, settings)
+        yield
+        engine.dispose()
+
+    app = FastAPI(title="SMM Authority API", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
+    app.state.engine = engine
+    app.state.session_factory = session_factory
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(auth.router)
+    app.include_router(users.router)
+    app.include_router(ventures.router)
+
+    @app.get("/health", tags=["meta"])
+    def health():
+        return {"status": "ok"}
+
+    return app
