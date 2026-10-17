@@ -56,7 +56,7 @@ def missing_columns(engine: Engine) -> list[tuple[str, object]]:
 def init_schema(engine: Engine, allow_alter: bool | None = None) -> list[str]:
     """Create missing tables, then bring existing tables up to date.
 
-    Stand-in for real migrations (Alembic) while the project is pre-release. On SQLite (development) missing columns are
+    Development and test convenience; production uses Alembic migrations instead (see prepare_schema). On SQLite (development) missing columns are
     added in place, keeping data. On any other database nothing is altered: startup stops with a clear list of what is
     missing instead of failing later with confusing errors. Returns a description of each change made."""
     from app import models  # noqa: F401  (importing registers every table on Base.metadata, whoever calls this first)
@@ -83,3 +83,32 @@ def init_schema(engine: Engine, allow_alter: bool | None = None) -> list[str]:
             changes.append(f"added {table}.{col.name}")
     log.warning("Upgraded the database schema in place: %s", "; ".join(changes))
     return changes
+
+
+def migration_head() -> str:
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    return ScriptDirectory.from_config(cfg).get_current_head()
+
+
+def ensure_migrated(engine: Engine) -> None:
+    """Production guard: the schema is changed only by `alembic upgrade head`, never implicitly at startup."""
+    with engine.connect() as conn:
+        tables = inspect(conn).get_table_names()
+        current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar() if "alembic_version" in tables else None
+    head = migration_head()
+    if current != head:
+        raise SchemaOutOfDate(f"The database is at migration {current or 'none'} but the code needs {head}. Run `alembic upgrade head` (from the api/ directory), then restart.")
+
+
+def prepare_schema(engine: Engine, settings) -> list[str]:
+    if settings.env == "production":
+        ensure_migrated(engine)
+        return []
+    return init_schema(engine)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.ai import AIProvider, AnthropicProvider
 from app.ratelimit import LoginLimiter
 from app.config import Settings, get_settings
-from app.db import init_schema, make_engine
+from app.db import make_engine, prepare_schema
 from app.jobs.ingest import Fetcher, build_fetcher
 from app.crypto import TokenCipher, TokenCipherError
 from app.publishers import X, LinkedIn
@@ -37,8 +37,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # create_all is fine for the first slice; move to Alembic migrations before the schema stabilises.
-        init_schema(engine)
+        prepare_schema(engine, settings)
         with session_factory() as db:
             ensure_admin(db, settings)
         yield

@@ -12,7 +12,7 @@ import time
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
-from app.db import init_schema, make_engine
+from app.db import make_engine, prepare_schema
 from app.main import build_publishing
 from app.publishing import run_due
 
@@ -26,7 +26,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = get_settings()
     engine = make_engine(settings.database_url)
-    init_schema(engine)
+    prepare_schema(engine, settings)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     publishing = build_publishing(settings)
     while True:

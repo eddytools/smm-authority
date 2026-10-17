@@ -13,7 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
-from app.db import init_schema, make_engine
+from app.db import make_engine, prepare_schema
 from app.framework import DEFAULT_MIX, SlotStatus
 from app.jobs.scoring import brief_keywords, rule_score
 from app.models import BriefVersion, FeedItem, ItemStatus, PlanSlot, PostMetric, Role, Source, SourceType, User, Venture
@@ -160,7 +160,7 @@ def main() -> None:
     args = parser.parse_args()
     settings = get_settings()
     engine = make_engine(settings.database_url)
-    init_schema(engine)
+    prepare_schema(engine, settings)
     print(seed(sessionmaker(bind=engine, expire_on_commit=False), reset=args.reset))
 
 

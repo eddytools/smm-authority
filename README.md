@@ -229,18 +229,21 @@ Replying to strangers is where marketing turns into spam, so the guardrails are 
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
-`ACCESS_TOKEN_MINUTES`, `CORS_ORIGINS` (comma-separated), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_REGISTRATION`,
+`ACCESS_TOKEN_MINUTES`, `LOGIN_MAX_FAILURES`, `LOGIN_WINDOW_SECONDS`, `CORS_ORIGINS` (comma-separated), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_REGISTRATION`,
 `AI_MODEL`, `AI_DAILY_LIMIT_PER_USER`, `AI_SCORE_BATCH` (items per scoring call, 20), `FEED_RETENTION_DAYS`,
 `REFRESH_MIN_INTERVAL_SECONDS` (60), `FETCH_USER_AGENT`, and `ANTHROPIC_API_KEY` (also accepted as `SMM_ANTHROPIC_API_KEY`).
 With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_KEY` of 32+ characters.
 
 ## Known limitations of this first slice
 
-- Schema changes: tables are created on startup, and on SQLite (development) any columns added by a newer version are added
-  in place without losing data (`init_schema` in `app/db.py`). Other databases are never altered: startup stops with a list of
-  the missing columns. Adopt real migrations (Alembic) before running Postgres in production.
+- Schema changes: in development, tables are created on startup and on SQLite any columns added by a newer version are
+  added in place (`init_schema` in `app/db.py`). With `SMM_ENV=production` nothing is changed implicitly: run
+  `alembic upgrade head` from `api/` and the API (and jobs) refuse to start on a database that isn't at the latest
+  migration. The baseline migration was generated from the models and checked against them in tests, but has only been
+  run on SQLite, not on Postgres. A database created by the dev auto-create path has no migration history; for an
+  existing one with the current schema run `alembic stamp head`.
 - The dashboard keeps the JWT in `localStorage`. Move to an httpOnly cookie (same-site deployment) before launch.
-- No login rate limiting, password-reset email or email verification yet.
+- Failed logins are limited per (address, email): 5 per 15 minutes, then 429 (`SMM_LOGIN_MAX_FAILURES`, `SMM_LOGIN_WINDOW_SECONDS`; 0 disables). The counter is in memory, so it is per process, and behind a proxy the address is the proxy's unless forwarded headers are trusted. No password-reset email or email verification yet.
 - The AI suggestion call has not been run against the live Anthropic API in this repo (no key in the build environment);
   it is covered by tests with a stubbed client and a schema check. Do one real call before relying on it.
 - Refusal fallbacks (`fallbacks`) are not enabled: refusals surface as a 502 with a clear message. Add them if
