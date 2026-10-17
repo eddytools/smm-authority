@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
 from app.ai import AIProvider, AnthropicProvider
+from app.ai_backends import GeminiBackend, JsonLLMProvider, OpenAIBackend
 from app.ratelimit import LoginLimiter
 from app.config import Settings, get_settings
 from app.db import make_engine, prepare_schema
@@ -12,7 +13,7 @@ from app.jobs.ingest import Fetcher, build_fetcher
 from app.crypto import TokenCipher, TokenCipherError
 from app.publishers import X, LinkedIn
 from app.publishing import Publishing
-from app.routers import auth, brief, communities, feed, influencers, toppost, insights, integrations, plan, replies, users, ventures
+from app.routers import ai_admin, auth, brief, communities, feed, influencers, toppost, insights, integrations, plan, replies, users, ventures
 from app.seed import ensure_admin
 
 
@@ -26,6 +27,17 @@ def build_publishing(settings: Settings, providers: dict | None = None) -> Publi
         "x": X(settings.x_client_id, settings.x_client_secret),
     }
     return Publishing(providers, cipher, settings)
+
+
+def build_ai(settings: Settings) -> AIProvider | None:
+    vendor, model = settings.ai_vendor, settings.effective_ai_model
+    if vendor == "anthropic":
+        return AnthropicProvider(settings.anthropic_api_key, model)
+    if vendor == "openai":
+        return JsonLLMProvider("openai", OpenAIBackend(settings.openai_api_key, settings.openai_base_url, model, settings.openai_token_param), model)
+    if vendor == "gemini":
+        return JsonLLMProvider("gemini", GeminiBackend(settings.gemini_api_key, settings.gemini_base_url, model), model)
+    return None
 
 
 def create_app(settings: Settings | None = None, ai: AIProvider | None = None, fetcher: Fetcher | None = None, providers: dict | None = None) -> FastAPI:
@@ -49,8 +61,8 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
     app.state.login_limiter = LoginLimiter(settings.login_max_failures, settings.login_window_seconds)
     app.state.engine = engine
     app.state.session_factory = session_factory
-    if ai is None and settings.anthropic_api_key:
-        ai = AnthropicProvider(settings.anthropic_api_key, settings.ai_model)
+    if ai is None:
+        ai = build_ai(settings)
     app.state.ai = ai
     app.state.fetcher = fetcher or build_fetcher(settings)
     app.state.publishing = build_publishing(settings, providers)
@@ -63,6 +75,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
     )
 
     app.include_router(auth.router)
+    app.include_router(ai_admin.router)
     app.include_router(users.router)
     app.include_router(ventures.router)
     app.include_router(brief.router)

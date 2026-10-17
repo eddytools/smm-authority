@@ -12,7 +12,7 @@ def _isolate_from_local_config(monkeypatch):
     import os
 
     for name in list(os.environ):
-        if name.startswith("SMM_") or name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        if name.startswith("SMM_") or name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setitem(Settings.model_config, "env_file", None)
 

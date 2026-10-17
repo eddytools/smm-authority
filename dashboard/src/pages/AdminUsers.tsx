@@ -2,6 +2,49 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Role, type User } from "../api";
 import { useAuth } from "../auth";
 
+const VENDOR_NAME: Record<string, string> = { anthropic: "Anthropic (Claude)", openai: "OpenAI or an OpenAI-compatible server", gemini: "Google Gemini" };
+
+function AiCard() {
+  const [status, setStatus] = useState<Awaited<ReturnType<typeof api.aiStatus>> | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.aiStatus().then(setStatus).catch(() => setStatus(null));
+  }, []);
+  if (!status) return null;
+  async function test() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api.aiTest();
+      setResult({ ok: true, text: `Working: ${r.model} answered (${r.input_tokens + r.output_tokens} tokens used).` });
+    } catch (err) {
+      setResult({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="card">
+      <h3>AI</h3>
+      {status.configured ? (
+        <p className="small">
+          Using <strong>{VENDOR_NAME[status.provider ?? ""] ?? status.provider}</strong>, model <code>{status.model}</code>
+          {status.base_url ? <> at <code>{status.base_url}</code></> : null}. Each non-admin user gets {status.daily_limit_per_user} AI requests per day.
+        </p>
+      ) : (
+        <p className="small">No AI vendor is configured, so drafting, scoring, quick replies and brief suggestions are off. Set <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code> or <code>GEMINI_API_KEY</code> (plus <code>SMM_AI_MODEL</code> for OpenAI and Gemini) on the server and restart it.</p>
+      )}
+      {status.configured && (
+        <p>
+          <button className="ghost" disabled={busy} onClick={test}>{busy ? "Testing…" : "Test the AI connection"}</button>{" "}
+          {result && <span className={result.ok ? "small" : "error"} role="status">{result.text}</span>}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function AdminUsers() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<User[] | null>(null);
@@ -52,6 +95,7 @@ export default function AdminUsers() {
         <h2>Users</h2>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
+      <AiCard />
 
       <section className="card">
         <table>

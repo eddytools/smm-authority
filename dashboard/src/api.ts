@@ -535,6 +535,8 @@ export const api = {
   replyToPlan: (vid: number, id: number, data: { scheduled_at: string; platform: string; post_type?: string }) => request<{ slot_id: number }>(`/ventures/${vid}/replies/${id}/to-plan`, json("POST", data)),
   deleteReply: (vid: number, id: number) => request<void>(`/ventures/${vid}/replies/${id}`, { method: "DELETE" }),
 
+  aiStatus: () => request<{ configured: boolean; provider: string | null; model: string | null; base_url: string | null; daily_limit_per_user: number }>("/ai/status"),
+  aiTest: () => request<{ ok: boolean; model: string; input_tokens: number; output_tokens: number }>("/ai/test", { method: "POST" }),
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>
     request<User>("/users", json("POST", data)),

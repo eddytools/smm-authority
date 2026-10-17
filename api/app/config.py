@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,7 +22,16 @@ class Settings(BaseSettings):
     allow_registration: bool = True
     # AI is optional: without a key the suggestion endpoints return 503 and everything else works.
     anthropic_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SMM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"))
-    ai_model: str = "claude-opus-5-5"
+    # Which AI vendor to use: "auto" picks the first one with credentials (Anthropic, then OpenAI, then Gemini).
+    ai_provider: Literal["auto", "anthropic", "openai", "gemini"] = "auto"
+    # Model id. Defaults to Claude Opus for Anthropic; for OpenAI/Gemini/compatible servers it must be set (model names change too fast to guess).
+    ai_model: str | None = None
+    # OpenAI, or any OpenAI-compatible server (Groq, Together, OpenRouter, Mistral, DeepSeek, Ollama, vLLM...) via the base URL
+    openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SMM_OPENAI_API_KEY", "OPENAI_API_KEY"))
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_token_param: str | None = None  # "max_tokens" or "max_completion_tokens"; guessed from the base URL when unset
+    gemini_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SMM_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"))
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     ai_daily_limit_per_user: int = 20
     # Feed ingestion
     fetch_user_agent: str = "smm-authority/0.1 (+https://github.com/eddytools/smm-authority)"
@@ -42,10 +52,41 @@ class Settings(BaseSettings):
     publish_max_lateness_hours: int = 24
 
     @property
+    def openai_configured(self) -> bool:
+        # a self-hosted OpenAI-compatible server (e.g. Ollama) may need no key; the real OpenAI always does
+        return bool(self.openai_api_key) or self.openai_base_url.rstrip("/") != "https://api.openai.com/v1"
+
+    @property
+    def ai_vendor(self) -> str | None:
+        """The vendor that will be used, or None when AI isn't configured."""
+        if self.ai_provider != "auto":
+            return self.ai_provider
+        if self.anthropic_api_key:
+            return "anthropic"
+        if self.openai_api_key:  # auto never picks a keyless custom server: choose it explicitly with SMM_AI_PROVIDER=openai
+            return "openai"
+        if self.gemini_api_key:
+            return "gemini"
+        return None
+
+    @property
+    def effective_ai_model(self) -> str | None:
+        return self.ai_model or ("claude-opus-5-5" if self.ai_vendor == "anthropic" else None)
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def assert_safe(self) -> None:
+        vendor = self.ai_vendor
+        if vendor == "anthropic" and not self.anthropic_api_key:
+            raise RuntimeError("SMM_AI_PROVIDER=anthropic needs ANTHROPIC_API_KEY")
+        if vendor == "openai" and not self.openai_configured:
+            raise RuntimeError("SMM_AI_PROVIDER=openai needs OPENAI_API_KEY (or SMM_OPENAI_BASE_URL for a self-hosted server)")
+        if vendor == "gemini" and not self.gemini_api_key:
+            raise RuntimeError("SMM_AI_PROVIDER=gemini needs GEMINI_API_KEY")
+        if vendor in ("openai", "gemini") and not self.ai_model:
+            raise RuntimeError(f"SMM_AI_MODEL is required with the {vendor} provider (set it to the model id from your vendor's model list)")
         if (self.linkedin_client_id or self.x_client_id) and not self.token_encryption_key:
             raise RuntimeError("SMM_TOKEN_ENCRYPTION_KEY is required when a publishing platform is configured (tokens are never stored in plain text)")
         if self.env == "production" and (self.secret_key == DEFAULT_SECRET or len(self.secret_key) < 32):

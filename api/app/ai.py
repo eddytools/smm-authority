@@ -230,12 +230,56 @@ def clamp_suggestion(draft: _Draft) -> tuple[Ideation, list[PlatformPlan]]:
     return ideation, plans
 
 
-class AnthropicProvider:
+class LLMTasks:
+    """The four things the app asks a model to do. Vendors differ only in `_complete`, which returns
+    (parsed pydantic object, input tokens, output tokens) or raises AIError."""
+
+    model: str
+
+    def _complete(self, system: str, payload: dict, output_format, max_tokens: int) -> tuple:
+        raise NotImplementedError
+
+    def ping(self) -> tuple[int, int]:
+        """A tiny real call, used by the admin "Test the AI connection" button. Returns (input, output) tokens."""
+        _, tokens_in, tokens_out = self._complete('You are a connectivity check. Set "ok" to true.', {"ping": True}, _Ping, 200)
+        return tokens_in, tokens_out
+
+    def suggest_brief(self, venture: dict, inputs: SuggestRequest) -> Suggestion:
+        parsed, tokens_in, tokens_out = self._complete(SYSTEM_PROMPT, {"venture": venture, "answers": inputs.model_dump(mode="json")}, _Draft, 4000)
+        ideation, plans = clamp_suggestion(parsed)
+        return Suggestion(ideation=ideation, platforms=plans, rationale=parsed.rationale.strip(), input_tokens=tokens_in, output_tokens=tokens_out, model=self.model)
+
+    def score_feed(self, venture: dict, brief: dict | None, items: list[dict]) -> ScoreResult:
+        parsed, tokens_in, tokens_out = self._complete(SCORE_PROMPT, {"venture": venture, "brief": brief, "items": items}, _Scores, 6000)
+        return ScoreResult(scores=clamp_scores(parsed, {i["id"] for i in items}), input_tokens=tokens_in, output_tokens=tokens_out, model=self.model)
+
+    def draft_post(self, context: dict) -> DraftResult:
+        parsed, tokens_in, tokens_out = self._complete(DRAFT_PROMPT, context, _PostDraft, 6000)
+        post, hooks, notes = clean_draft(parsed)
+        if not post:
+            raise AIError(502, "The AI returned an empty draft. Try again.")
+        return DraftResult(post, hooks, notes, tokens_in, tokens_out, self.model)
+
+    def draft_reply(self, context: dict) -> ReplyResult:
+        parsed, tokens_in, tokens_out = self._complete(REPLY_PROMPT, context, _ReplyDraft, 5000)
+        reply, title, idea, notes = clean_reply(parsed)
+        if not reply:
+            raise AIError(502, "The AI returned an empty reply. Try again.")
+        return ReplyResult(reply, title if idea else None, idea, notes, tokens_in, tokens_out, self.model)
+
+
+class _Ping(BaseModel):
+    ok: bool
+
+
+class AnthropicProvider(LLMTasks):
+    name = "anthropic"
+
     def __init__(self, api_key: str | None, model: str, client: anthropic.Anthropic | None = None):
         self.model = model
         self.client = client or anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=120)
 
-    def _parse(self, system: str, payload: dict, output_format, max_tokens: int = 6000):
+    def _complete(self, system: str, payload: dict, output_format, max_tokens: int = 6000):
         try:
             response = self.client.messages.parse(
                 model=self.model,
@@ -257,39 +301,4 @@ class AnthropicProvider:
             raise AIError(502, "The AI declined to produce a result for this input.")
         if response.parsed_output is None:
             raise AIError(502, "The AI response could not be read. Try again.")
-        return response
-
-    def suggest_brief(self, venture: dict, inputs: SuggestRequest) -> Suggestion:
-        response = self._parse(SYSTEM_PROMPT, {"venture": venture, "answers": inputs.model_dump(mode="json")}, _Draft, max_tokens=4000)
-        ideation, plans = clamp_suggestion(response.parsed_output)
-        return Suggestion(
-            ideation=ideation,
-            platforms=plans,
-            rationale=response.parsed_output.rationale.strip(),
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            model=self.model,
-        )
-
-    def score_feed(self, venture: dict, brief: dict | None, items: list[dict]) -> ScoreResult:
-        response = self._parse(SCORE_PROMPT, {"venture": venture, "brief": brief, "items": items}, _Scores)
-        return ScoreResult(
-            scores=clamp_scores(response.parsed_output, {i["id"] for i in items}),
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            model=self.model,
-        )
-
-    def draft_post(self, context: dict) -> DraftResult:
-        response = self._parse(DRAFT_PROMPT, context, _PostDraft, max_tokens=6000)
-        post, hooks, notes = clean_draft(response.parsed_output)
-        if not post:
-            raise AIError(502, "The AI returned an empty draft. Try again.")
-        return DraftResult(post, hooks, notes, response.usage.input_tokens, response.usage.output_tokens, self.model)
-
-    def draft_reply(self, context: dict) -> ReplyResult:
-        response = self._parse(REPLY_PROMPT, context, _ReplyDraft, max_tokens=5000)
-        reply, title, idea, notes = clean_reply(response.parsed_output)
-        if not reply:
-            raise AIError(502, "The AI returned an empty reply. Try again.")
-        return ReplyResult(reply, title if idea else None, idea, notes, response.usage.input_tokens, response.usage.output_tokens, self.model)
+        return response.parsed_output, response.usage.input_tokens, response.usage.output_tokens

@@ -253,6 +253,34 @@ Limits: these are correlations in small samples (a post may win on topic, timing
 simple pattern matches (the hook is the headline, so a Reddit title is the hook, not the first line of its body); and engagement
 for pasted posts is whatever you typed. Test a pattern in your own posts, then check Performance.
 
+## Choosing the AI vendor
+
+The AI features (brief suggestions, feed scoring, post drafting, quick replies) run on **Anthropic (Claude)**, **OpenAI**, **Google
+Gemini**, or **any OpenAI-compatible server** (Groq, Together, OpenRouter, Mistral, DeepSeek, Ollama, vLLM...). Set one key:
+
+| Vendor | Settings |
+|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` (model defaults to `claude-opus-5-5`; override with `SMM_AI_MODEL`) |
+| OpenAI | `OPENAI_API_KEY` and `SMM_AI_MODEL` |
+| Gemini | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) and `SMM_AI_MODEL` |
+| Compatible server | `SMM_AI_PROVIDER=openai`, `SMM_OPENAI_BASE_URL=https://.../v1`, `SMM_AI_MODEL`, and a key if the server wants one |
+
+`SMM_AI_PROVIDER=auto` (the default) uses the first key found in the order above; set it to `anthropic`, `openai` or `gemini` to
+force one. `SMM_AI_MODEL` has no default for the non-Anthropic vendors on purpose: model names change too quickly to guess, and
+a wrong guess fails in confusing ways. A missing key or model stops startup with a clear message. Only one vendor is used at a time.
+Admin > Users shows the vendor and model in use and has a **Test the AI connection** button (one tiny real call).
+
+How it works: Claude uses its native structured-output call. The other vendors have no common structured-output API, so they get
+the result's JSON Schema in the prompt plus the vendor's JSON mode, and the reply is validated with the same models; an unusable
+reply is retried once with the error, then fails with a clear message and nothing is saved. Keys are only ever sent to their
+vendor, never returned by the API or shown in the dashboard, and error messages never echo them.
+
+Limits: **the OpenAI and Gemini paths have not run against the real services** (no keys or route to them from the build
+environment): they're tested against canned responses and a fake OpenAI-compatible server over real HTTP. Run the connection test once
+per vendor. Output quality differs by model, especially the reply and draft safeguards: the code-level checks still apply to every
+vendor, but weaker models will trip them more often. Token usage is recorded per request, but there is no cost conversion, because
+prices differ per vendor and model.
+
 ## Publishing to LinkedIn and X
 
 Connect an account per venture (Venture > Publishing). Approved posts that you **Schedule** then go out at their time, and
