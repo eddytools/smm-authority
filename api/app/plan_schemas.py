@@ -97,6 +97,10 @@ class SlotOut(ORM):
     source_item_id: int | None
     warnings: list[str] = []
     has_metrics: bool = False
+    will_auto_publish: bool = False
+    published_at: AwareDatetime | None = None
+    external_url: str | None = None
+    publish_error: str | None = None
 
 
 class DraftRequest(BaseModel):

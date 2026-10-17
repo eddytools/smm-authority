@@ -160,3 +160,76 @@ def make_client(fake_ai, fetcher):
     yield factory
     for c in stack:
         c.__exit__(None, None, None)
+
+
+# --- publishing fakes ----------------------------------------------------------------
+
+class FakeProvider:
+    """Stands in for LinkedIn / X: records what it was asked and fails on demand."""
+
+    def __init__(self, platform, pkce=False):
+        self.platform, self.label, self.uses_pkce, self.configured = platform, platform.title(), pkce, True
+        self.published, self.exchanged, self.refreshed, self.errors = [], [], [], []
+        self.refresh_result, self.refresh_error = None, None
+
+    def authorize_url(self, redirect_uri, state, code_challenge):
+        return f"https://fake.example/{self.platform}/authorize?state={state}&redirect_uri={redirect_uri}&cc={code_challenge}"
+
+    def exchange_code(self, code, redirect_uri, code_verifier):
+        from app.publishers import TokenSet
+
+        self.exchanged.append((code, redirect_uri, code_verifier))
+        return TokenSet(f"access-{code}", f"refresh-{code}", 3600)
+
+    def account(self, token):
+        from app.publishers import Account
+
+        return Account("acct-1", "Maya Test")
+
+    def refresh(self, refresh_token):
+        from app.publishers import TokenSet
+
+        self.refreshed.append(refresh_token)
+        if self.refresh_error:
+            raise self.refresh_error
+        return self.refresh_result or TokenSet("fresh-access", "fresh-refresh", 7200)
+
+    def publish(self, token, account_id, account_name, text):
+        from app.publishers import PostResult
+
+        self.published.append({"token": token, "account_id": account_id, "text": text})
+        if self.errors:
+            raise self.errors.pop(0)
+        n = len(self.published)
+        return PostResult(f"post-{n}", f"https://fake.example/{self.platform}/post/{n}")
+
+
+@pytest.fixture
+def providers():
+    return {"linkedin": FakeProvider("linkedin"), "x": FakeProvider("x", pkce=True)}
+
+
+@pytest.fixture
+def pub_client(fake_ai, fetcher, providers):
+    from cryptography.fernet import Fernet
+
+    settings = make_settings(token_encryption_key=Fernet.generate_key().decode())
+    with TestClient(create_app(settings, ai=fake_ai, fetcher=fetcher, providers=providers)) as c:
+        yield c
+
+
+@pytest.fixture
+def alice_pub(pub_client):
+    register(pub_client, "alice@example.com", name="Alice")
+    return login(pub_client, "alice@example.com")
+
+
+@pytest.fixture
+def bob_pub(pub_client):
+    register(pub_client, "bob@example.com", name="Bob")
+    return login(pub_client, "bob@example.com")
+
+
+@pytest.fixture
+def admin_headers_pub(pub_client):
+    return login(pub_client, ADMIN["email"], ADMIN["password"])

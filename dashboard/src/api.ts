@@ -131,6 +131,21 @@ export interface PlanSlot {
   source_item_id: number | null;
   warnings: string[];
   has_metrics: boolean;
+  will_auto_publish: boolean;
+  published_at: string | null;
+  external_url: string | null;
+  publish_error: string | null;
+}
+
+export interface Integration {
+  platform: string;
+  label: string;
+  configured: boolean;
+  connected: boolean;
+  account_name: string | null;
+  status: "active" | "needs_reconnect" | null;
+  auto_publish: boolean | null;
+  expires_at: string | null;
 }
 
 export interface DraftResult {
@@ -331,6 +346,12 @@ export const api = {
   getMetrics: (vid: number, slotId: number) => request<(Metrics & { slot_id: number }) | null>(`/ventures/${vid}/plan/slots/${slotId}/metrics`),
   saveMetrics: (vid: number, slotId: number, data: Metrics) => request<Metrics>(`/ventures/${vid}/plan/slots/${slotId}/metrics`, json("PUT", data)),
   importMetrics: (vid: number, csv: string) => request<ImportResult>(`/ventures/${vid}/metrics/import`, json("POST", { csv })),
+
+  listIntegrations: (vid: number) => request<Integration[]>(`/ventures/${vid}/integrations`),
+  connectIntegration: (vid: number, platform: string) => request<{ authorize_url: string }>(`/ventures/${vid}/integrations/${platform}/connect`, { method: "POST" }),
+  updateIntegration: (vid: number, platform: string, auto_publish: boolean) => request<Integration>(`/ventures/${vid}/integrations/${platform}`, json("PATCH", { auto_publish })),
+  disconnectIntegration: (vid: number, platform: string) => request<void>(`/ventures/${vid}/integrations/${platform}`, { method: "DELETE" }),
+  publishNow: (vid: number, slotId: number) => request<PlanSlot>(`/ventures/${vid}/plan/slots/${slotId}/publish`, { method: "POST" }),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, ApiError, type Framework, type PlanSlot, type SlotStatus, type Stage, type Venture } from "../api";
+import { api, ApiError, type Framework, type Integration, type PlanSlot, type SlotStatus, type Stage, type Venture } from "../api";
 
 const CHAR_LIMIT: Record<string, number> = { x: 280, linkedin: 3000, instagram: 2200, youtube: 5000 };
 
@@ -29,6 +29,7 @@ export default function VenturePlan() {
   const [venture, setVenture] = useState<Venture | null>(null);
   const [fw, setFw] = useState<Framework | null>(null);
   const [slots, setSlots] = useState<PlanSlot[] | null>(null);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [week, setWeek] = useState(() => mondayOf(new Date()));
   const [view, setView] = useState<"week" | "list">("week");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -56,6 +57,7 @@ export default function VenturePlan() {
   useEffect(() => {
     api.getVenture(vid).then(setVenture).catch((e: Error) => setError(e.message));
     api.getFramework().then(setFw).catch((e: Error) => setError(e.message));
+    api.listIntegrations(vid).then(setIntegrations).catch(() => setIntegrations([]));
     load().catch((e: Error) => setError(e.message));
   }, [vid, load]);
 
@@ -226,7 +228,10 @@ export default function VenturePlan() {
                     >
                       <span className="t">{timeOf(s.scheduled_at)} · {s.platform}</span>
                       <span>{types[s.post_type]?.label ?? s.post_type}{s.locked ? " 🔒" : ""}{s.reactive ? " ⚡" : ""}</span>
-                      <span className="m">{label(s.status)}</span>
+                      <span className="m">
+                        {s.publish_error && s.status === "scheduled" ? "⚠ Needs attention" : label(s.status)}
+                        {s.will_auto_publish && !s.publish_error ? " · auto" : ""}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -262,6 +267,9 @@ export default function VenturePlan() {
           slot={selected}
           vid={vid}
           fw={fw}
+          integrations={integrations}
+          onPublished={(updated) => setSlots((cur) => cur?.map((x) => (x.id === updated.id ? updated : x)) ?? null)}
+          onReload={load}
           onClose={() => setSelectedId(null)}
           onPatch={(data) => patch(selected, data)}
           onDelete={() =>
@@ -278,9 +286,23 @@ export default function VenturePlan() {
   );
 }
 
-function Editor({ slot, vid, fw, onClose, onPatch, onDelete }: { slot: PlanSlot; vid: number; fw: Framework; onClose: () => void; onPatch: (d: Parameters<typeof api.updateSlot>[2]) => Promise<void>; onDelete: () => void }) {
+function Editor({ slot, vid, fw, integrations, onPublished, onReload, onClose, onPatch, onDelete }: { slot: PlanSlot; vid: number; fw: Framework; integrations: Integration[]; onPublished: (s: PlanSlot) => void; onReload: () => Promise<void>; onClose: () => void; onPatch: (d: Parameters<typeof api.updateSlot>[2]) => Promise<void>; onDelete: () => void }) {
   const [f, setF] = useState({ topic: slot.topic, pillar: slot.pillar ?? "", cta: slot.cta ?? "", draft: slot.draft ?? "", when: toLocalInput(slot.scheduled_at) });
   const readOnly = READ_ONLY.includes(slot.status);
+  const conn = integrations.find((i) => i.platform === slot.platform && i.connected);
+  const canPublishNow = !!conn && conn.status === "active" && (slot.status === "approved" || slot.status === "scheduled");
+  const [pub, setPub] = useState<{ busy: boolean; error: string }>({ busy: false, error: "" });
+  async function publishNow() {
+    if (!window.confirm(`Post this to ${conn?.label} (${conn?.account_name}) right now?`)) return;
+    setPub({ busy: true, error: "" });
+    try {
+      onPublished(await api.publishNow(vid, slot.id));
+      setPub({ busy: false, error: "" });
+    } catch (e) {
+      setPub({ busy: false, error: (e as Error).message });
+      await onReload();
+    }
+  }
   const [ai, setAi] = useState<{ instructions: string; busy: boolean; hooks: string[]; notes: string; error: string }>({ instructions: "", busy: false, hooks: [], notes: "", error: "" });
   const typeInfo = fw.stages.flatMap((s) => s.post_types.map((t) => ({ ...t, stage: s.key }))).find((t) => t.key === slot.post_type);
   const next = fw.transitions[slot.status] ?? [];
@@ -329,6 +351,29 @@ function Editor({ slot, vid, fw, onClose, onPatch, onDelete }: { slot: PlanSlot;
         {(slot.status === "skipped" || slot.status === "archived") && <span className="step now">{label(slot.status)}</span>}
       </div>
 
+      {slot.external_url && (
+        <p className="small">
+          <a href={slot.external_url} target="_blank" rel="noopener noreferrer">View the live post ↗</a>
+          {slot.published_at && <span className="muted"> · posted {new Date(slot.published_at).toLocaleString()}</span>}
+        </p>
+      )}
+      {slot.status === "scheduled" && slot.will_auto_publish && !slot.publish_error && (
+        <p className="notice" role="status">This will be posted automatically to {conn?.label} ({conn?.account_name}) at {new Date(slot.scheduled_at).toLocaleString()}.</p>
+      )}
+      {slot.status === "scheduled" && !slot.will_auto_publish && !slot.publish_error && (
+        <p className="muted small">
+          {["linkedin", "x"].includes(slot.platform)
+            ? `${conn && conn.status !== "active" ? `The ${conn.label} connection needs to be reconnected` : conn ? "Automatic posting is paused" : `${slot.platform === "x" ? "X" : "LinkedIn"} isn't connected`}, so you will need to post this by hand. `
+            : `${label(slot.platform)} isn't posted automatically, so you will need to post this by hand at the scheduled time, then mark it Published. `}
+          {["linkedin", "x"].includes(slot.platform) && <Link to={`/ventures/${vid}/publishing`}>Publishing settings</Link>}
+        </p>
+      )}
+      {slot.publish_error && (
+        <p className={slot.status === "published" ? "notice" : "error"} role="alert">
+          {slot.status === "published" ? "Posted, with a note: " : "Automatic posting failed: "}{slot.publish_error}
+        </p>
+      )}
+      {pub.error && <p className="error" role="alert">{pub.error}</p>}
       {readOnly && <p className="muted small">This post has gone out, so its content is locked. You can still move its status forward.</p>}
       {(slot.status === "published" || slot.status === "analysed") && (
         <p className="small">
@@ -399,6 +444,9 @@ function Editor({ slot, vid, fw, onClose, onPatch, onDelete }: { slot: PlanSlot;
             {st === "scheduled" ? "Schedule" : st === "approved" ? "Approve" : `→ ${label(st)}`}
           </button>
         ))}
+        {canPublishNow && (
+          <button onClick={publishNow} disabled={pub.busy}>{pub.busy ? "Posting…" : slot.publish_error ? "Retry now" : `Publish now to ${conn?.label}`}</button>
+        )}
         {!readOnly && (
           <button className="ghost" onClick={() => onPatch({ locked: !slot.locked })}>
             {slot.locked ? "Unlock" : "Lock"}

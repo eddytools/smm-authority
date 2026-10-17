@@ -72,6 +72,7 @@ class Venture(Base):
     briefs: Mapped[list["BriefVersion"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
     sources: Mapped[list["Source"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
     plan_slots: Mapped[list["PlanSlot"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
+    connections: Mapped[list["Connection"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
 
     @property
     def owner_email(self) -> str:
@@ -203,7 +204,22 @@ class PlanSlot(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     venture: Mapped[Venture] = relationship(back_populates="plan_slots")
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
+    external_id: Mapped[str | None] = mapped_column(String(200), default=None)  # id of the post on the platform
+    external_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    publish_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
+    publish_error: Mapped[str | None] = mapped_column(String(500), default=None)
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)  # set while a worker is posting it
+
     metric: Mapped["PostMetric | None"] = relationship(back_populates="slot", uselist=False, cascade="all, delete-orphan", passive_deletes=True, lazy="joined")
+
+    @property
+    def will_auto_publish(self) -> bool:
+        """Scheduled, and the venture has a live connection for this platform with auto-posting on."""
+        return self.status == SlotStatus.scheduled and any(
+            c.platform == self.platform and c.status == "active" and c.auto_publish for c in self.venture.connections
+        )
 
     @property
     def has_metrics(self) -> bool:
@@ -237,3 +253,40 @@ class PostMetric(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
     slot: Mapped[PlanSlot] = relationship(back_populates="metric", lazy="joined")
+
+
+class Connection(Base):
+    """A venture's authorised account on a publishing platform. Tokens are stored encrypted and never returned by the API."""
+
+    __tablename__ = "connections"
+    __table_args__ = (UniqueConstraint("venture_id", "platform", name="uq_connection_venture_platform"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[str] = mapped_column(String(200))
+    account_name: Mapped[str] = mapped_column(String(200))
+    access_token_enc: Mapped[str] = mapped_column(Text)
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text, default=None)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # "active" | "needs_reconnect"
+    auto_publish: Mapped[bool] = mapped_column(Boolean, default=True)  # per-venture kill switch for automatic posting
+    connected_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+    venture: Mapped[Venture] = relationship(back_populates="connections")
+
+
+class OAuthAttempt(Base):
+    """One in-flight 'Connect' click. The PKCE verifier lives here, server-side, never in a URL the browser sees."""
+
+    __tablename__ = "oauth_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    state: Mapped[str] = mapped_column(String(100), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"))
+    platform: Mapped[str] = mapped_column(String(20))
+    code_verifier: Mapped[str | None] = mapped_column(String(200), default=None)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())

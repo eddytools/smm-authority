@@ -16,10 +16,22 @@ def placeholders(text: str | None) -> list[str]:
     return PLACEHOLDER.findall(text or "")
 
 
-def _x_parts(text: str) -> list[str]:
+def x_parts(text: str) -> list[str]:
     if _THREAD_PART.search(text):
         return [p.strip() for p in _THREAD_PART.split(text) if p.strip()]
     return [text.strip()]
+
+
+def over_limit(platform: str, text: str | None) -> list[str]:
+    """Hard platform limits only (X is checked per post, or per part of a numbered thread)."""
+    text = (text or "").strip()
+    limit = CHAR_LIMIT.get(platform)
+    if not text or not limit:
+        return []
+    if platform == "x":
+        parts = x_parts(text)
+        return [f"{'Part ' + str(i) + ' is' if len(parts) > 1 else 'This post is'} {len(p)} characters, over X's {limit} limit. Shorten it or split it into a numbered thread." for i, p in enumerate(parts, 1) if len(p) > limit]
+    return [f"{len(text)} characters is over the {limit} limit for {platform}."] if len(text) > limit else []
 
 
 def check_draft(platform: str, text: str | None) -> list[str]:
@@ -27,15 +39,7 @@ def check_draft(platform: str, text: str | None) -> list[str]:
     text = (text or "").strip()
     if not text:
         return []
-    warnings: list[str] = []
-    limit = CHAR_LIMIT.get(platform)
-    if platform == "x":
-        for i, part in enumerate(_x_parts(text), 1):
-            if len(part) > limit:
-                where = f"Part {i} is" if len(_x_parts(text)) > 1 else "This post is"
-                warnings.append(f"{where} {len(part)} characters, over X's {limit} limit. Shorten it or split it into a numbered thread.")
-    elif limit and len(text) > limit:
-        warnings.append(f"{len(text)} characters is over the {limit} limit for {platform}.")
+    warnings: list[str] = over_limit(platform, text)
     found = placeholders(text)
     if found:
         warnings.append(f"{len(found)} placeholder{'s' if len(found) != 1 else ''} to fill in before approving: {', '.join(found[:4])}{'…' if len(found) > 4 else ''}")

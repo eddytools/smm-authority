@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings, get_settings
-from app.db import Base, make_engine
+from app.db import init_schema, make_engine
 from app.feed_parsers import ParseError, build_url, parse_for, url_hash
 from app.fetch import FetchError, FetchResult, safe_fetch
 from app.jobs.scoring import brief_keywords, rule_score
@@ -132,7 +132,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = get_settings()
     engine = make_engine(settings.database_url)
-    Base.metadata.create_all(engine)
+    init_schema(engine)
     report = run_all(sessionmaker(bind=engine, expire_on_commit=False), settings, venture_id=args.venture)
     failed = sum(s.status == "error" for s in report.sources)
     log.info("ingest done: %d sources, %d new items, %d failed", len(report.sources), report.new_items, failed)

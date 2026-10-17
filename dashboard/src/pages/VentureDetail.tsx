@@ -96,6 +96,10 @@ export default function VentureDetail() {
           <h4>Performance</h4>
           <p className="muted small">What worked, what didn't, and which posts brought leads.</p>
         </Link>
+        <Link to={`/ventures/${venture.id}/publishing`} className="card linkcard">
+          <h4>Publishing</h4>
+          <p className="muted small">Connect LinkedIn and X so approved posts go out on schedule.</p>
+        </Link>
       </div>
     </>
   );

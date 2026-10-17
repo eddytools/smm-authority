@@ -27,12 +27,25 @@ class Settings(BaseSettings):
     feed_retention_days: int = 30
     refresh_min_interval_seconds: int = 60
     ai_score_batch: int = 20
+    # Publishing (LinkedIn / X). Each platform is off until its app credentials are set.
+    token_encryption_key: str | None = None  # Fernet key(s); comma-separated to rotate: first encrypts, all decrypt
+    public_api_url: str = "http://localhost:8000"  # where the platforms redirect users back to (the OAuth redirect URI host)
+    dashboard_url: str = "http://localhost:5173"
+    linkedin_client_id: str | None = None
+    linkedin_client_secret: str | None = None
+    # LinkedIn versions its API by month (YYYYMM) and retires old ones: confirm a current value in LinkedIn's docs.
+    linkedin_api_version: str = "202609"
+    x_client_id: str | None = None
+    x_client_secret: str | None = None
+    publish_max_lateness_hours: int = 24
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def assert_safe(self) -> None:
+        if (self.linkedin_client_id or self.x_client_id) and not self.token_encryption_key:
+            raise RuntimeError("SMM_TOKEN_ENCRYPTION_KEY is required when a publishing platform is configured (tokens are never stored in plain text)")
         if self.env == "production" and (self.secret_key == DEFAULT_SECRET or len(self.secret_key) < 32):
             raise RuntimeError("SMM_SECRET_KEY must be set to a random value of at least 32 characters in production")
 

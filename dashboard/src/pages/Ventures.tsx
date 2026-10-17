@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, type Venture, type VentureInput } from "../api";
 import { useAuth } from "../auth";
 import VentureForm from "../components/VentureForm";
 
 export default function Ventures() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
   const isAdmin = user?.role === "admin";
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [showArchived, setShowArchived] = useState(false);
@@ -77,6 +78,7 @@ export default function Ventures() {
         </section>
       )}
 
+      {params.get("publishing_error") && <p className="error" role="alert">That connection link has expired or was already used. Open the venture's Publishing page and press Connect again.</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {ventures === null && !error && <p className="muted">Loading…</p>}
       {ventures?.length === 0 && !creating && (

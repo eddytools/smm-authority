@@ -13,10 +13,14 @@ api/.venv/bin/pip install -q -r api/requirements-dev.txt
 [ -f dashboard/.env ] || cp dashboard/.env.example dashboard/.env
 [ -d dashboard/node_modules ] || (cd dashboard && npm install --no-audit --no-fund)
 
+# publishing stores OAuth tokens encrypted, so it needs a key: make one for local use if there isn't one yet
+grep -q '^SMM_TOKEN_ENCRYPTION_KEY=.' api/.env || echo "SMM_TOKEN_ENCRYPTION_KEY=$(api/.venv/bin/python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> api/.env
+
 (cd api && .venv/bin/python -m app.demo "$@")
 
 trap 'kill 0' EXIT
 (cd api && .venv/bin/uvicorn --factory app.main:create_app --reload --port 8000) &
+(cd api && .venv/bin/python -m app.jobs.publish_due --loop 30) &   # posts scheduled posts on connected accounts (a no-op until you connect one)
 (cd dashboard && npm run dev -- --host localhost --port 5173) &
 echo
 echo "  Dashboard: http://localhost:5173    API docs: http://localhost:8000/docs"

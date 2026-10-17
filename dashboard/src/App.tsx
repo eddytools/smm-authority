@@ -8,6 +8,7 @@ import VentureDetail from "./pages/VentureDetail";
 import VentureFeed from "./pages/VentureFeed";
 import VentureInsights from "./pages/VentureInsights";
 import VenturePlan from "./pages/VenturePlan";
+import VenturePublishing from "./pages/VenturePublishing";
 import Ventures from "./pages/Ventures";
 
 function RequireAuth() {
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="ventures/:id/feed" element={<VentureFeed />} />
           <Route path="ventures/:id/plan" element={<VenturePlan />} />
           <Route path="ventures/:id/insights" element={<VentureInsights />} />
+          <Route path="ventures/:id/publishing" element={<VenturePublishing />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin/users" element={<AdminUsers />} />
           </Route>

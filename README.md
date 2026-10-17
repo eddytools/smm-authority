@@ -58,6 +58,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Ventures](docs/screenshots/01-ventures.png) **Ventures** | ![Authority setup](docs/screenshots/02-venture-setup.png) **Authority setup** |
 | ![Trend feed](docs/screenshots/03-trend-feed.png) **Trend feed** | ![Planner](docs/screenshots/04-planner-week.png) **Content planner** |
 | ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
+| ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
 
 ## API overview
 
@@ -82,6 +83,9 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/insights` (`days`) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
+| GET | `/ventures/{id}/integrations`; POST `/ventures/{id}/integrations/{platform}/connect`; PATCH / DELETE `/ventures/{id}/integrations/{platform}` | owner or admin |
+| GET | `/integrations/{platform}/callback` (where LinkedIn / X send the browser back; secured by a one-time state) | public |
+| POST | `/ventures/{id}/plan/slots/{slot}/publish` (Publish now) | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
@@ -165,6 +169,39 @@ once it has at least 2 posts. The report also lists best and weakest posts, whic
 published funnel mix, and how many planned posts were actually published. With fewer than 10 measured posts the page says
 so: treat the results as hints. The planner does not change by itself; adjust the funnel mix when generating the next plan.
 
+## Publishing to LinkedIn and X
+
+Connect an account per venture (Venture > Publishing). Approved posts that you **Schedule** then go out at their time, and
+**Publish now** posts an approved post immediately. Only text posts, from a personal profile, for now.
+
+**What keeps it safe** (`app/publishing.py`, covered by tests that deliberately break each rule to prove they notice):
+- only human-approved, Scheduled posts are ever sent; nothing is sent for a platform that isn't connected, or while the
+  venture's auto-post switch is off; posts with `[placeholders]` or over the platform's limit can't be scheduled for auto-posting;
+- a post is claimed with one atomic update before sending, so overlapping job runs or a button press never post it twice;
+- temporary failures retry after 5 min, 15 min and 1 hour, then stop and show the reason; a rejected token marks the
+  connection "Reconnect needed" and leaves the post waiting; an X thread that went out partly is never retried;
+- a post more than 24 hours late (for example after downtime) is held for you instead of going out stale;
+- OAuth tokens are encrypted at rest (`SMM_TOKEN_ENCRYPTION_KEY`, rotatable), never returned by the API or logged; the OAuth
+  `state` is single-use, expires in 10 minutes and is bound to the user, venture and platform; X's PKCE verifier stays on the server.
+
+**Run the job.** Locally `./scripts/dev.sh` runs it every 30 seconds. In production run it every minute:
+
+```cron
+* * * * *  cd /srv/smm/api && .venv/bin/python -m app.jobs.publish_due >> /var/log/smm-publish.log 2>&1
+```
+
+**Set up the platforms** (an administrator does this once; the steps below are from the platforms' documentation as I could
+read it, so follow their current docs where they differ):
+1. Generate an encryption key (see `api/.env.example`), set `SMM_TOKEN_ENCRYPTION_KEY`, and set `SMM_PUBLIC_API_URL` to the
+   public HTTPS address of the API (and `SMM_DASHBOARD_URL` to the dashboard's).
+2. **LinkedIn:** create an app at linkedin.com/developers, add the "Share on LinkedIn" and "Sign In with LinkedIn using OpenID
+   Connect" products, add `<SMM_PUBLIC_API_URL>/integrations/linkedin/callback` as a redirect URL, and set
+   `SMM_LINKEDIN_CLIENT_ID` / `SMM_LINKEDIN_CLIENT_SECRET`. Set `SMM_LINKEDIN_API_VERSION` to a current month (`YYYYMM`).
+   Standard apps get ~60 day tokens with no refresh token, so expect to reconnect roughly every two months.
+3. **X:** create a project and app at developer.x.com, enable OAuth 2.0 with a confidential client ("Web App, Automated App or
+   Bot"), add `<SMM_PUBLIC_API_URL>/integrations/x/callback` as the callback URL, and set `SMM_X_CLIENT_ID` /
+   `SMM_X_CLIENT_SECRET`. Posting through the API needs an X API plan that includes write access: check X's current plans and limits.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
@@ -175,7 +212,9 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
 
 ## Known limitations of this first slice
 
-- Tables are created on startup; add Alembic migrations before the schema grows.
+- Schema changes: tables are created on startup, and on SQLite (development) any columns added by a newer version are added
+  in place without losing data (`init_schema` in `app/db.py`). Other databases are never altered: startup stops with a list of
+  the missing columns. Adopt real migrations (Alembic) before running Postgres in production.
 - The dashboard keeps the JWT in `localStorage`. Move to an httpOnly cookie (same-site deployment) before launch.
 - No login rate limiting, password-reset email or email verification yet.
 - The AI suggestion call has not been run against the live Anthropic API in this repo (no key in the build environment);
@@ -190,8 +229,16 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   commercial use. Plan to move to Reddit's OAuth API with a registered app before launch.
 - Not built yet: X and Google Trends sources (they need paid API access), per-source "dismissals tune relevance",
   turning a feed item into a post idea, and an opt-in schedule for AI scoring.
-- The app does **not publish** anything yet: "Published" is set by hand, and results are typed in or imported from CSV.
-  Auto-publishing to LinkedIn/X and pulling analytics automatically need platform API access and are the next slices.
+- **Publishing has never been run against the real LinkedIn or X.** The build environment had no developer credentials and
+  could not reach those hosts. The platform clients are tested against canned responses and the whole connect, schedule and
+  post flow against fake platforms, but the exact API details were checked only against search snippets of the docs, and the
+  `POST /2/tweets` body is written from memory. Connect a throwaway account and post once on each platform before relying on
+  it, and confirm LinkedIn's current API version.
+- Publishing is text only (no images, link cards or video), personal profiles only (no company pages), and LinkedIn hashtags
+  post as plain text because every special character is escaped to stop LinkedIn truncating posts at a parenthesis.
+- Tokens are encrypted but the key lives in the API's environment: protect it like a password. There is no audit log of
+  who connected or posted what yet.
+- Results are still typed in or imported from CSV: pulling analytics automatically is the next integration.
 - The demo data is entirely fictional, with a built-in pattern (stories win, product demos lag) so Performance has a
   story to tell. Its numbers say nothing about real results.
 - Draft quality has not been evaluated with the real model (no API key in the build environment): the prompt, the

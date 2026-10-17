@@ -10,7 +10,7 @@ from app.access import get_accessible_venture
 from app.ai import AIError, AIProvider
 from app.ai_budget import ensure_budget, record_usage
 from app.deps import CurrentUser, DbSession, SettingsDep
-from app.drafting import build_context, check_draft, placeholders
+from app.drafting import build_context, check_draft, over_limit, placeholders
 from app.framework import (
     DRAFT_REQUIRED,
     GUIDANCE,
@@ -25,6 +25,7 @@ from app.framework import (
     Stage,
 )
 from app.models import BriefVersion, FeedItem, ItemStatus, PlanSlot
+from app.publishing import active_connection, publish_slot, reset_publish_state
 from app.plan_schemas import DraftOut, DraftRequest, GenerateOut, GenerateRequest, SlotCreate, SlotOut, SlotUpdate
 from app.planner import Candidate, PlanningError, generate
 
@@ -197,12 +198,17 @@ def update_slot(venture_id: int, slot_id: int, body: SlotUpdate, user: CurrentUs
     # Hand-edited work must survive "regenerate": a manual change to an unedited idea locks it (unless the user said otherwise).
     if slot.status == SlotStatus.idea and CONTENT_FIELDS & changes.keys() and "locked" not in changes:
         slot.locked = True
+    if new_status == SlotStatus.scheduled and new_status != slot.status and (conn := active_connection(db, venture_id, new_platform)) and conn.auto_publish:
+        if problems := over_limit(new_platform, new_draft):  # it will be sent automatically, so catch what the platform would reject
+            raise HTTPException(400, "Fix this before scheduling an automatic post: " + problems[0])
     if new_status in APPROVAL_STATUSES and new_status != slot.status and (left := placeholders(new_draft)):
         raise HTTPException(400, f"Fill in or remove the placeholders before approving: {', '.join(left[:4])}")
     for field, value in changes.items():
         if field == "platform":
             value = value.value
         setattr(slot, field, value)
+    if changes.keys() & (CONTENT_FIELDS | {"status"}):
+        reset_publish_state(slot)  # a changed post gets a fresh start: no stale error, attempts or backoff
     if "post_type" in changes:
         slot.stage = STAGE_OF[new_type]
         slot.reactive = new_type.value == "newsjacking"
@@ -249,3 +255,29 @@ def draft_slot(venture_id: int, slot_id: int, body: DraftRequest, request: Reque
     record_usage(db, user, venture.id, "slot_draft", result)
     db.commit()
     return DraftOut(draft=result.post, hooks=result.hooks, notes=result.notes, warnings=check_draft(slot.platform, result.post))
+
+
+@router.post("/slots/{slot_id}/publish", response_model=SlotOut)
+def publish_now(venture_id: int, slot_id: int, request: Request, user: CurrentUser, db: DbSession):
+    """Post an approved or scheduled post right now through the connected account. An explicit human action."""
+    get_accessible_venture(db, venture_id, user)
+    slot = _get_slot(db, venture_id, slot_id)
+    publishing = request.app.state.publishing
+    if slot.status not in (SlotStatus.approved, SlotStatus.scheduled):
+        raise HTTPException(400, "Only approved or scheduled posts can be published. Approve it first.")
+    if slot.platform not in publishing.providers or active_connection(db, venture_id, slot.platform) is None:
+        raise HTTPException(400, f"{slot.platform} isn't connected for this venture. Connect it under Publishing, or post by hand and mark it as published.")
+    if problems := over_limit(slot.platform, slot.draft):
+        raise HTTPException(400, problems[0])
+    if left := placeholders(slot.draft):
+        raise HTTPException(400, f"Fill in or remove the placeholders first: {', '.join(left[:4])}")
+    reset_publish_state(slot)
+    slot.status = SlotStatus.scheduled
+    db.commit()
+    outcome = publish_slot(db, slot, publishing)
+    db.refresh(slot)
+    if outcome.status in ("retry", "failed", "reconnect"):
+        raise HTTPException(502 if outcome.status == "retry" else 400, outcome.message or "Publishing failed.")
+    if outcome.status == "skipped":
+        raise HTTPException(409, outcome.message or "Could not publish.")
+    return slot
