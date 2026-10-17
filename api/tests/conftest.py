@@ -1,21 +1,51 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai import Suggestion
+from app.brief_schemas import Ideation, Platform, PlatformPlan
 from app.config import Settings
 from app.main import create_app
 
 ADMIN = {"email": "admin@example.com", "password": "admin-password-1"}
 
 
-@pytest.fixture
-def client():
-    settings = Settings(
+class FakeAI:
+    model = "fake-model"
+
+    def __init__(self):
+        self.calls = []
+
+    def suggest_brief(self, venture, inputs):
+        self.calls.append((venture, inputs))
+        return Suggestion(
+            ideation=Ideation(niche_statement="Help X do Y", unique_angle="Z", pillars=["a", "b", "c"]),
+            platforms=[PlatformPlan(platform=Platform.linkedin, is_primary=True, cadence_per_week=4, reason="ICP is there")],
+            rationale="because",
+            input_tokens=100,
+            output_tokens=50,
+            model=self.model,
+        )
+
+
+def make_settings(**overrides):
+    base = dict(
         database_url="sqlite://",
         secret_key="test-secret-key-that-is-long-enough-for-hs256",
         admin_email=ADMIN["email"],
         admin_password=ADMIN["password"],
+        anthropic_api_key=None,
     )
-    with TestClient(create_app(settings)) as c:
+    return Settings(**{**base, **overrides})
+
+
+@pytest.fixture
+def fake_ai():
+    return FakeAI()
+
+
+@pytest.fixture
+def client(fake_ai):
+    with TestClient(create_app(make_settings(), ai=fake_ai)) as c:
         yield c
 
 

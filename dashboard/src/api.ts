@@ -32,6 +32,44 @@ export interface VentureInput {
   website_url: string | null;
 }
 
+export const PLATFORMS = ["linkedin", "x", "reddit", "instagram", "youtube", "blog", "newsletter"] as const;
+export type Platform = (typeof PLATFORMS)[number];
+
+export interface PlatformPlan {
+  platform: Platform;
+  cadence_per_week: number;
+  is_primary: boolean;
+  reason?: string | null;
+}
+
+export interface BriefData {
+  icp: { industry?: string | null; company_size?: string | null; roles: string[]; pains: string[]; goals: string[]; objections: string[]; channels: string[] };
+  ideation: { niche_statement?: string | null; unique_angle?: string | null; pillars: string[]; proof_assets: string[]; opinions: string[] };
+  offer: { offer?: string | null; lead_magnets: string[]; cta_url?: string | null; booking_url?: string | null };
+  voice: { tone?: string | null; dos: string[]; donts: string[]; writing_samples: string[] };
+  platforms: PlatformPlan[];
+}
+
+export interface BriefVersion {
+  venture_id: number;
+  version: number;
+  data: BriefData;
+  created_by_id: number | null;
+  created_at: string;
+}
+
+export interface BriefVersionSummary {
+  version: number;
+  created_by_id: number | null;
+  created_at: string;
+}
+
+export interface BriefSuggestion {
+  ideation: BriefData["ideation"];
+  platforms: PlatformPlan[];
+  rationale: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -115,6 +153,13 @@ export const api = {
   updateVenture: (id: number, data: Partial<VentureInput> & { is_archived?: boolean }) =>
     request<Venture>(`/ventures/${id}`, json("PATCH", data)),
   deleteVenture: (id: number) => request<void>(`/ventures/${id}`, { method: "DELETE" }),
+
+  getBrief: (ventureId: number) => request<BriefVersion | null>(`/ventures/${ventureId}/brief`),
+  getBriefVersion: (ventureId: number, version: number) => request<BriefVersion>(`/ventures/${ventureId}/brief/versions/${version}`),
+  listBriefVersions: (ventureId: number) => request<BriefVersionSummary[]>(`/ventures/${ventureId}/brief/versions`),
+  saveBrief: (ventureId: number, data: BriefData) => request<BriefVersion>(`/ventures/${ventureId}/brief`, json("PUT", data)),
+  suggestBrief: (ventureId: number, inputs: Partial<BriefData>) =>
+    request<BriefSuggestion>(`/ventures/${ventureId}/brief/suggest`, json("POST", inputs)),
 
   listUsers: () => request<User[]>("/users"),
   createUser: (data: { name: string; email: string; password: string; role: Role }) =>

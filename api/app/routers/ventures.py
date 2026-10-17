@@ -5,21 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.access import get_accessible_venture
 from app.deps import CurrentUser, DbSession
-from app.models import Role, User, Venture
+from app.models import Role, Venture
 from app.schemas import VentureCreate, VentureOut, VentureUpdate
 
 router = APIRouter(prefix="/ventures", tags=["ventures"])
 
 _DUPLICATE = "You already have a venture with this name"
-
-
-def _get_accessible(db: Session, venture_id: int, user: User) -> Venture:
-    """Owners see their own ventures, admins see all. Others get 404 so ids aren't probeable."""
-    venture = db.get(Venture, venture_id)
-    if venture is None or (venture.owner_id != user.id and user.role != Role.admin):
-        raise HTTPException(404, "Venture not found")
-    return venture
 
 
 def _commit(db: Session) -> None:
@@ -60,12 +53,12 @@ def create_venture(body: VentureCreate, user: CurrentUser, db: DbSession):
 
 @router.get("/{venture_id}", response_model=VentureOut)
 def get_venture(venture_id: int, user: CurrentUser, db: DbSession):
-    return _get_accessible(db, venture_id, user)
+    return get_accessible_venture(db, venture_id, user)
 
 
 @router.patch("/{venture_id}", response_model=VentureOut)
 def update_venture(venture_id: int, body: VentureUpdate, user: CurrentUser, db: DbSession):
-    venture = _get_accessible(db, venture_id, user)
+    venture = get_accessible_venture(db, venture_id, user)
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(venture, field, value)
     _commit(db)
@@ -75,6 +68,6 @@ def update_venture(venture_id: int, body: VentureUpdate, user: CurrentUser, db: 
 
 @router.delete("/{venture_id}", status_code=204)
 def delete_venture(venture_id: int, user: CurrentUser, db: DbSession):
-    venture = _get_accessible(db, venture_id, user)
+    venture = get_accessible_venture(db, venture_id, user)
     db.delete(venture)
     db.commit()

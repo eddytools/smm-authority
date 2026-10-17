@@ -1,0 +1,95 @@
+from types import SimpleNamespace
+
+import anthropic
+import httpx
+import pytest
+
+from app.ai import AIError, AnthropicProvider, _Draft, _PlatformPick, clamp_suggestion
+from app.brief_schemas import Platform, SuggestRequest
+
+
+class StubClient:
+    def __init__(self, result=None, raises=None):
+        self._result, self._raises = result, raises
+        self.messages = SimpleNamespace(parse=self._parse)
+        self.kwargs = None
+
+    def _parse(self, **kwargs):
+        self.kwargs = kwargs
+        if self._raises:
+            raise self._raises
+        return self._result
+
+
+def draft(**over):
+    base = dict(
+        niche_statement="  I help X  ",
+        unique_angle="Angle",
+        pillars=["One", "two", "TWO", "three", "four", "five", "six"],
+        proof_assets_to_collect=["case study"],
+        opinions_to_consider=["hot take"],
+        platforms=[
+            _PlatformPick(platform=Platform.x, is_primary=False, cadence_per_week=99, reason="r"),
+            _PlatformPick(platform=Platform.linkedin, is_primary=True, cadence_per_week=0, reason="r"),
+            _PlatformPick(platform=Platform.reddit, is_primary=True, cadence_per_week=2, reason="r"),
+            _PlatformPick(platform=Platform.x, is_primary=False, cadence_per_week=3, reason="dup"),
+        ],
+        rationale=" why ",
+    )
+    return _Draft(**{**base, **over})
+
+
+def response(parsed, stop_reason="end_turn"):
+    return SimpleNamespace(parsed_output=parsed, stop_reason=stop_reason, usage=SimpleNamespace(input_tokens=11, output_tokens=7))
+
+
+def test_clamp_enforces_limits_dedupes_and_single_primary():
+    ideation, plans = clamp_suggestion(draft())
+    assert ideation.niche_statement == "I help X"
+    assert ideation.pillars == ["One", "two", "three", "four", "five"]  # deduped case-insensitively, max 5
+    assert [p.platform for p in plans] == [Platform.x, Platform.linkedin, Platform.reddit]  # duplicate x dropped
+    assert [p.is_primary for p in plans] == [False, True, False]  # only the first primary kept
+    assert [p.cadence_per_week for p in plans] == [21, 1, 2]  # clamped into 1..21
+
+
+def test_clamp_picks_a_primary_when_model_forgets():
+    _, plans = clamp_suggestion(draft(platforms=[_PlatformPick(platform=Platform.x, is_primary=False, cadence_per_week=3, reason="")]))
+    assert plans[0].is_primary is True and plans[0].reason is None
+
+
+def test_provider_happy_path_uses_structured_output_and_wraps_user_data():
+    client = StubClient(response(draft()))
+    out = AnthropicProvider(None, "claude-opus-5-5", client=client).suggest_brief({"name": "Acme"}, SuggestRequest())
+    assert out.input_tokens == 11 and out.output_tokens == 7 and out.rationale == "why"
+    kw = client.kwargs
+    assert kw["model"] == "claude-opus-5-5" and kw["output_format"] is _Draft
+    assert "<data>" in kw["messages"][0]["content"] and "Acme" in kw["messages"][0]["content"]
+    assert "temperature" not in kw  # sampling params are rejected on current models
+
+
+def test_provider_maps_refusal_and_unparseable_output():
+    with pytest.raises(AIError) as e:
+        AnthropicProvider(None, "m", client=StubClient(response(None, "refusal"))).suggest_brief({}, SuggestRequest())
+    assert e.value.status_code == 502 and "declined" in e.value.message
+    with pytest.raises(AIError):
+        AnthropicProvider(None, "m", client=StubClient(response(None))).suggest_brief({}, SuggestRequest())
+
+
+def _status_error(cls, status):
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return cls("boom", response=httpx.Response(status, request=req), body=None)
+
+
+@pytest.mark.parametrize(
+    "exc,status",
+    [
+        (_status_error(anthropic.RateLimitError, 429), 503),
+        (_status_error(anthropic.AuthenticationError, 401), 503),
+        (_status_error(anthropic.InternalServerError, 500), 502),
+        (anthropic.APIConnectionError(request=httpx.Request("POST", "https://x")), 502),
+    ],
+)
+def test_provider_maps_sdk_errors(exc, status):
+    with pytest.raises(AIError) as e:
+        AnthropicProvider(None, "m", client=StubClient(raises=exc)).suggest_brief({}, SuggestRequest())
+    assert e.value.status_code == status

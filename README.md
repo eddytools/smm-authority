@@ -51,14 +51,29 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/auth/me` | any signed-in user |
 | GET/POST | `/ventures` (`?scope=mine\|all`, `include_archived`, `limit`, `offset`) | user (`all` = admin) |
 | GET/PATCH/DELETE | `/ventures/{id}` | owner or admin |
+| GET/PUT | `/ventures/{id}/brief` (PUT appends a new version) | owner or admin |
+| GET | `/ventures/{id}/brief/versions`, `/ventures/{id}/brief/versions/{n}` | owner or admin |
+| POST | `/ventures/{id}/brief/suggest` (AI draft, not saved) | owner or admin |
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
 
+## Authority setup (per venture)
+
+Each venture has a one-time, editable **Authority Brief**: ICP, ideation (niche, angle, 3-5 pillars, proof, opinions),
+offer/funnel links, voice, and platform choice with weekly cadence. Saving never edits history, it appends a new version,
+and restoring an old version is just saving it again.
+
+"Suggest with AI" drafts ideation and platform choices from what the user has typed. It is on-demand only, never saved
+automatically, and is capped per non-admin user per 24h (`SMM_AI_DAILY_LIMIT_PER_USER`). Calls go through
+`app/ai.py` (Anthropic SDK, structured output, model `SMM_AI_MODEL`). Without `ANTHROPIC_API_KEY` the endpoint
+returns 503 and the rest of the app is unaffected. Token usage is recorded in `ai_usage`.
+
 ## Configuration (API, `SMM_` prefix)
 
 `ENV`, `DATABASE_URL` (SQLite by default, any SQLAlchemy URL e.g. Postgres), `SECRET_KEY`,
-`ACCESS_TOKEN_MINUTES`, `CORS_ORIGINS` (comma-separated), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_REGISTRATION`.
+`ACCESS_TOKEN_MINUTES`, `CORS_ORIGINS` (comma-separated), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_REGISTRATION`,
+`AI_MODEL`, `AI_DAILY_LIMIT_PER_USER`, and `ANTHROPIC_API_KEY` (also accepted as `SMM_ANTHROPIC_API_KEY`).
 With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_KEY` of 32+ characters.
 
 ## Known limitations of this first slice
@@ -66,4 +81,8 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
 - Tables are created on startup; add Alembic migrations before the schema grows.
 - The dashboard keeps the JWT in `localStorage`. Move to an httpOnly cookie (same-site deployment) before launch.
 - No login rate limiting, password-reset email or email verification yet.
-- Ventures hold only basic fields. The Authority Brief, trend feed, planner and tracking attach to a venture next.
+- The AI suggestion call has not been run against the live Anthropic API in this repo (no key in the build environment);
+  it is covered by tests with a stubbed client and a schema check. Do one real call before relying on it.
+- Refusal fallbacks (`fallbacks`) are not enabled: refusals surface as a 502 with a clear message. Add them if
+  suggestions ever get declined in practice.
+- Trend feed, planner and tracking attach to a venture next.

@@ -4,13 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
+from app.ai import AIProvider, AnthropicProvider
 from app.config import Settings, get_settings
 from app.db import Base, make_engine
-from app.routers import auth, users, ventures
+from app.routers import auth, brief, users, ventures
 from app.seed import ensure_admin
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, ai: AIProvider | None = None) -> FastAPI:
     settings = settings or get_settings()
     settings.assert_safe()
 
@@ -30,6 +31,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = session_factory
+    if ai is None and settings.anthropic_api_key:
+        ai = AnthropicProvider(settings.anthropic_api_key, settings.ai_model)
+    app.state.ai = ai
 
     app.add_middleware(
         CORSMiddleware,
@@ -41,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(users.router)
     app.include_router(ventures.router)
+    app.include_router(brief.router)
 
     @app.get("/health", tags=["meta"])
     def health():

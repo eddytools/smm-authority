@@ -1,12 +1,13 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET = "dev-insecure-secret-change-me-0123456789"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="SMM_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="SMM_", extra="ignore", populate_by_name=True)
 
     env: str = "development"
     database_url: str = "sqlite:///./smm.db"
@@ -16,6 +17,10 @@ class Settings(BaseSettings):
     admin_email: str | None = None
     admin_password: str | None = None
     allow_registration: bool = True
+    # AI is optional: without a key the suggestion endpoints return 503 and everything else works.
+    anthropic_api_key: str | None = Field(default=None, validation_alias=AliasChoices("SMM_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"))
+    ai_model: str = "claude-opus-5-5"
+    ai_daily_limit_per_user: int = 20
 
     @property
     def cors_origin_list(self) -> list[str]:

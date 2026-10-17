@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, type Venture, type VentureInput } from "../api";
 import { useAuth } from "../auth";
+import BriefEditor from "../components/BriefEditor";
 import VentureForm from "../components/VentureForm";
 
 const UPCOMING = [
-  ["Authority Brief", "ICP, niche positioning, content pillars, offer and voice"],
   ["Trend feed", "Daily topics from Google, X, Reddit and RSS filtered to your ICP"],
   ["Content planner", "Weekly and monthly TOFU / MOFU / BOFU calendar"],
   ["Performance", "What worked, what didn't, and leads by post"],
@@ -85,6 +85,8 @@ export default function VentureDetail() {
           </dl>
         )}
       </section>
+
+      <BriefEditor ventureId={venture.id} />
 
       <h3>Coming next for this venture</h3>
       <div className="grid">

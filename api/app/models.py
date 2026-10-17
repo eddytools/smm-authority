@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -48,7 +48,39 @@ class Venture(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     owner: Mapped[User] = relationship(back_populates="ventures", lazy="joined")
+    briefs: Mapped[list["BriefVersion"]] = relationship(back_populates="venture", cascade="all, delete-orphan", passive_deletes=True)
 
     @property
     def owner_email(self) -> str:
         return self.owner.email
+
+
+class BriefVersion(Base):
+    """One saved version of a venture's Authority Brief (ICP, ideation, offer, voice, platforms). Append-only."""
+
+    __tablename__ = "brief_versions"
+    __table_args__ = (UniqueConstraint("venture_id", "version", name="uq_brief_venture_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict] = mapped_column(JSON)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    venture: Mapped[Venture] = relationship(back_populates="briefs")
+
+
+class AIUsage(Base):
+    """One row per successful AI call; used for per-user daily limits and cost reporting."""
+
+    __tablename__ = "ai_usage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    venture_id: Mapped[int | None] = mapped_column(ForeignKey("ventures.id", ondelete="SET NULL"), default=None)
+    feature: Mapped[str] = mapped_column(String(50))
+    model: Mapped[str] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
