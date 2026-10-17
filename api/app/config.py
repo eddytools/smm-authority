@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./smm.db"
     secret_key: str = DEFAULT_SECRET
     access_token_minutes: int = 60
+    login_max_failures: int = 5  # failed logins per (address, email) before a lockout; 0 disables
+    login_window_seconds: int = 900
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     admin_email: str | None = None
     admin_password: str | None = None

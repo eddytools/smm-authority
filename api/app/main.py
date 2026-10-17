@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
 from app.ai import AIProvider, AnthropicProvider
+from app.ratelimit import LoginLimiter
 from app.config import Settings, get_settings
 from app.db import init_schema, make_engine
 from app.jobs.ingest import Fetcher, build_fetcher
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None, ai: AIProvider | None = None, f
 
     app = FastAPI(title="SMM Authority API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.state.login_limiter = LoginLimiter(settings.login_max_failures, settings.login_window_seconds)
     app.state.engine = engine
     app.state.session_factory = session_factory
     if ai is None and settings.anthropic_api_key:

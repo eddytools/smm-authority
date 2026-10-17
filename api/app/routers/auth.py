@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -27,14 +27,22 @@ def register(body: RegisterRequest, db: DbSession, settings: SettingsDep):
 
 
 @router.post("/login", response_model=Token)
-def login(body: LoginRequest, db: DbSession, settings: SettingsDep):
+def login(body: LoginRequest, request: Request, db: DbSession, settings: SettingsDep):
+    limiter = request.app.state.login_limiter
+    key = (request.client.host if request.client else "unknown", body.email.lower())
+    wait = limiter.retry_after(key)
+    if wait:
+        raise HTTPException(429, "Too many failed sign-in attempts. Try again later.", headers={"Retry-After": str(wait)})
     invalid = HTTPException(401, "Invalid email or password")
     user = db.scalar(select(User).where(User.email == body.email))
     if user is None:
         burn_verify(body.password)
+        limiter.record_failure(key)
         raise invalid
     if not verify_password(body.password, user.password_hash) or not user.is_active:
+        limiter.record_failure(key)
         raise invalid
+    limiter.reset(key)
     return Token(access_token=create_access_token(user.id, settings))
 
 
