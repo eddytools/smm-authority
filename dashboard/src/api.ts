@@ -210,6 +210,14 @@ export interface PostView {
   leads: number;
 }
 
+export interface MixSuggestion {
+  ready: boolean;
+  changed: boolean;
+  current: Record<Stage, number>;
+  suggested: Record<Stage, number>;
+  reasons: string[];
+}
+
 export interface Insights {
   range_days: number;
   totals: { posts: number; impressions: number; engagements: number; engagement_rate: number | null; clicks: number; ctr: number | null; follows: number; leads: number; published: number; measured: number };
@@ -221,6 +229,7 @@ export interface Insights {
   bottom: PostView[];
   adherence: { due: number; published: number; skipped: number; rate: number | null };
   mix: Record<Stage, { planned: number; published: number }>;
+  mix_suggestion: MixSuggestion;
   waiting: { slot_id: number; topic: string; platform: string; scheduled_at: string }[];
   note: string | null;
 }
@@ -382,7 +391,8 @@ export const api = {
     request<DraftResult>(`/ventures/${vid}/plan/slots/${id}/draft`, json("POST", { instructions })),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
-  getInsights: (vid: number, days: number) => request<Insights>(`/ventures/${vid}/insights?days=${days}`),
+  getInsights: (vid: number, days: number, mix?: Record<Stage, number>) =>
+    request<Insights>(`/ventures/${vid}/insights?days=${days}${mix ? `&tofu=${mix.tofu}&mofu=${mix.mofu}&bofu=${mix.bofu}` : ""}`),
   getMetrics: (vid: number, slotId: number) => request<(Metrics & { slot_id: number }) | null>(`/ventures/${vid}/plan/slots/${slotId}/metrics`),
   saveMetrics: (vid: number, slotId: number, data: Metrics) => request<Metrics>(`/ventures/${vid}/plan/slots/${slotId}/metrics`, json("PUT", data)),
   importMetrics: (vid: number, csv: string) => request<ImportResult>(`/ventures/${vid}/metrics/import`, json("POST", { csv })),

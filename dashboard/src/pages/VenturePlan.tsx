@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, ApiError, type Framework, type Integration, type PlanSlot, type SlotStatus, type Stage, type Venture } from "../api";
+import { api, ApiError, type Framework, type Integration, type MixSuggestion, type PlanSlot, type SlotStatus, type Stage, type Venture } from "../api";
 
 const CHAR_LIMIT: Record<string, number> = { x: 280, linkedin: 3000, instagram: 2200, youtube: 5000 };
 
@@ -39,6 +39,8 @@ export default function VenturePlan() {
   const [busy, setBusy] = useState(false);
   const [gen, setGen] = useState({ start: nextMonday(), period: "month" as "week" | "month", tofu: 50, mofu: 30, bofu: 20 });
 
+  const [suggestion, setSuggestion] = useState<MixSuggestion | null>(null);
+
   const landed = useRef(false);
   const load = useCallback(async () => {
     const list = await api.listPlan(vid);
@@ -73,6 +75,16 @@ export default function VenturePlan() {
   const mixTotal = gen.tofu + gen.mofu + gen.bofu;
   const types = useMemo(() => (fw ? Object.fromEntries(fw.stages.flatMap((s) => s.post_types.map((t) => [t.key, { ...t, stage: s.key }]))) : {}), [fw]);
   const selected = slots?.find((s) => s.id === selectedId) ?? null;
+
+  async function suggestMix() {
+    setError("");
+    setSuggestion(null);
+    try {
+      setSuggestion((await api.getInsights(vid, 90, { tofu: gen.tofu, mofu: gen.mofu, bofu: gen.bofu })).mix_suggestion);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function generate(replace = false) {
     setBusy(true);
@@ -169,6 +181,19 @@ export default function VenturePlan() {
           </button>
         </div>
         {mixTotal !== 100 && <p className="error">Funnel mix adds up to {mixTotal}%, it needs to be 100%.</p>}
+        <p className="small">
+          <button className="ghost" onClick={suggestMix} disabled={mixTotal !== 100}>Suggest a mix from my results</button>
+        </p>
+        {suggestion && (
+          <div className="notice" role="status">
+            <strong>{suggestion.ready ? (suggestion.changed ? `Suggested: ${STAGES.map((s) => `${s.toUpperCase()} ${suggestion.suggested[s]}%`).join(" · ")}` : "No change suggested") : "Not enough results yet"}</strong>
+            <ul>{suggestion.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+            <p className="muted small">A rule-based nudge from your published posts (never more than 10 points per stage), not a guarantee.</p>
+            {suggestion.ready && suggestion.changed && (
+              <button onClick={() => { setGen({ ...gen, ...suggestion.suggested }); setSuggestion(null); }}>Use this mix</button>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card">

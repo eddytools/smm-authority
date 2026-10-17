@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.access import get_accessible_venture
 from app.deps import CurrentUser, DbSession
-from app.framework import SlotStatus
+from app.framework import DEFAULT_MIX, SlotStatus
 from app.insights import PUBLISHED, build_report
 from app.metrics_schemas import ImportError_, ImportOut, ImportRequest, MetricsIn, MetricsOut
 from app.models import PlanSlot, PostMetric
@@ -94,9 +94,15 @@ def import_metrics(venture_id: int, body: ImportRequest, user: CurrentUser, db: 
 
 
 @router.get("/insights")
-def insights(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=365)] = 90):
+def insights(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=365)] = 90,
+    tofu: Annotated[int, Query(ge=0, le=100)] = DEFAULT_MIX["tofu"],
+    mofu: Annotated[int, Query(ge=0, le=100)] = DEFAULT_MIX["mofu"],
+    bofu: Annotated[int, Query(ge=0, le=100)] = DEFAULT_MIX["bofu"],
+):
     """What worked / what didn't. Deterministic: no AI is involved."""
     get_accessible_venture(db, venture_id, user)
+    if tofu + mofu + bofu != 100:
+        raise HTTPException(422, "The funnel mix must add up to 100")
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
     slots = db.scalars(select(PlanSlot).where(PlanSlot.venture_id == venture_id, PlanSlot.scheduled_at >= since, PlanSlot.scheduled_at <= now)).unique().all()
@@ -107,4 +113,4 @@ def insights(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[
         }
         for s in slots
     ]
-    return build_report(rows, now, since, days)
+    return build_report(rows, now, since, days, {"tofu": tofu, "mofu": mofu, "bofu": bofu})

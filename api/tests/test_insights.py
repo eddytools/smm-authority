@@ -144,3 +144,51 @@ def test_demo_seed_builds_a_complete_venture_and_a_readable_story(tmp_path):
     assert any(w["key"] == "story" for w in r["worked"] if w["dimension"] == "post_type") or any(w["key"] == "short_video" for w in r["worked"] if w["dimension"] == "post_type")
     # selling-stage posts are the built-in laggard (individual types may have too few posts to be judged, which is correct)
     assert any(d["key"] == "bofu" for d in r["didnt"] if d["dimension"] == "stage") or any(d["key"] in ("product_demo", "conversion") for d in r["didnt"])
+
+
+# --- funnel mix suggestion ---------------------------------------------------------------------------------------------
+
+from app.insights import MAX_MIX_SHIFT, suggest_mix
+
+CURRENT = {"tofu": 50, "mofu": 30, "bofu": 20}
+
+
+def stage_rows(stage, n, imp=1000, eng=50, leads=0):
+    return [row(stage=stage, metrics=m(imp, eng, leads=leads)) for _ in range(n)]
+
+
+def test_mix_suggestion_waits_for_enough_results():
+    s = suggest_mix(stage_rows("tofu", 5), CURRENT)
+    assert s["ready"] is False and s["suggested"] == CURRENT and "at least 12" in s["reasons"][0]
+
+
+def test_mix_moves_toward_stages_that_bring_leads_and_stays_within_limits():
+    rows = stage_rows("tofu", 6, eng=30) + stage_rows("mofu", 4, eng=60) + stage_rows("bofu", 4, eng=90, leads=3)
+    s = suggest_mix(rows, CURRENT)
+    assert s["ready"] and s["changed"]
+    assert sum(s["suggested"].values()) == 100
+    assert s["suggested"]["bofu"] > 20 and s["suggested"]["tofu"] < 50
+    for st in CURRENT:
+        assert abs(s["suggested"][st] - CURRENT[st]) <= MAX_MIX_SHIFT
+        assert s["suggested"][st] >= 10
+    assert any("SELLING" not in r and "BOFU" in r for r in s["reasons"])
+
+
+def test_mix_is_left_alone_when_results_are_even():
+    rows = stage_rows("tofu", 5) + stage_rows("mofu", 4) + stage_rows("bofu", 4)
+    s = suggest_mix(rows, CURRENT)
+    assert s["suggested"] == CURRENT and s["changed"] is False and "keep your current mix" in s["reasons"][0]
+
+
+def test_mix_ignores_stages_without_enough_results_and_respects_zero_shares():
+    rows = stage_rows("tofu", 8, eng=20) + stage_rows("mofu", 6, eng=80) + stage_rows("bofu", 1, eng=400, leads=9)
+    s = suggest_mix(rows, CURRENT)
+    assert s["suggested"]["bofu"] <= 20  # one lucky post is not evidence: it must not raise the selling share
+    assert any("Not enough results to judge BOFU" in r for r in s["reasons"])
+    zero = suggest_mix(rows, {"tofu": 60, "mofu": 40, "bofu": 0})
+    assert zero["suggested"]["bofu"] == 0 and sum(zero["suggested"].values()) == 100
+
+
+def test_mix_suggestion_in_report_and_api_validation():
+    r = report(stage_rows("tofu", 6) + stage_rows("mofu", 6))
+    assert r["mix_suggestion"]["ready"] and r["mix_suggestion"]["current"] == CURRENT

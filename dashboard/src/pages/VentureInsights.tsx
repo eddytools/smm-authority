@@ -138,7 +138,7 @@ export default function VentureInsights() {
             <section className="card">
               <h3>Do next</h3>
               <ul>{data.recommendations.map((r) => <li key={r}>{r}</li>)}</ul>
-              <p className="muted small">These are rules applied to your numbers, not AI opinions. The planner doesn't change by itself: adjust your funnel mix when you generate the next plan.</p>
+              <p className="muted small">These are rules applied to your numbers, not AI opinions. The planner doesn't change by itself: use “Suggest a mix from my results” on the Planner page when you generate the next plan.</p>
             </section>
           )}
 

@@ -7,7 +7,7 @@ import math
 from collections import defaultdict
 from datetime import datetime
 
-from app.framework import LABEL, STAGE_GOAL, PostType, Stage
+from app.framework import DEFAULT_MIX, LABEL, STAGE_GOAL, PostType, Stage
 
 MIN_GROUP = 2  # a group needs this many measured posts before we draw any conclusion about it
 WORKED_LIFT = 1.25  # engagement rate at least 25% above your average
@@ -59,7 +59,64 @@ def _aggregate(rows: list[dict]) -> dict:
     }
 
 
-def build_report(rows: list[dict], now: datetime, since: datetime, days: int) -> dict:
+MIN_MIX_POSTS = 12  # measured posts needed before we suggest changing the funnel mix
+MAX_MIX_SHIFT = 10  # percentage points a stage may move in one suggestion
+MIN_STAGE_SHARE = 10  # a stage you plan at all keeps at least this share
+STAGES = [st.value for st in Stage]
+
+
+def suggest_mix(measured: list[dict], current: dict[str, int]) -> dict:
+    """A cautious funnel-mix suggestion from results. Each stage is scored by how its engagement rate (and, once there are
+    at least 3 leads, leads per post) compares with your average; shares move toward the better stages by at most
+    MAX_MIX_SHIFT points. Stages with fewer than MIN_GROUP measured posts are left alone. It's a nudge, not an optimiser."""
+    base = {"current": dict(current), "suggested": dict(current), "changed": False, "reasons": []}
+    if len(measured) < MIN_MIX_POSTS:
+        return {**base, "ready": False, "reasons": [f"Needs at least {MIN_MIX_POSTS} posts with results before the planner can suggest a mix (you have {len(measured)})."]}
+    total = _aggregate(measured)
+    use_leads = total["leads"] >= 3
+    per_stage = {st: [r for r in measured if r["stage"] == st] for st in STAGES}
+    scores: dict[str, float] = {}
+    judged: list[str] = []
+    notes: dict[str, str] = {}
+    for st, rows in per_stage.items():
+        if len(rows) < MIN_GROUP or not total["engagement_rate"]:
+            scores[st] = 1.0
+            continue
+        agg = _aggregate(rows)
+        eng = (agg["engagement_rate"] or 0) / total["engagement_rate"]
+        lead = ((agg["leads"] / len(rows)) / (total["leads"] / len(measured))) if use_leads else eng
+        scores[st] = max(0.25, min(4.0, (eng + lead) / 2))
+        judged.append(st)
+        notes[st] = f"{eng:.1f}× engagement" + (f", {lead:.1f}× leads per post" if use_leads else "") + f" ({len(rows)} posts)"
+    # Only stages with enough results trade share with each other; the rest keep exactly what they have.
+    pool = sum(current[st] for st in judged)
+    weights = {st: current[st] * math.sqrt(scores[st]) for st in judged}
+    norm = sum(weights.values()) or 1
+    target = {st: (weights[st] / norm * pool if st in weights else float(current[st])) for st in STAGES}
+    lo = {st: (current[st] if st not in weights else 0 if current[st] == 0 else max(MIN_STAGE_SHARE, current[st] - MAX_MIX_SHIFT)) for st in STAGES}
+    hi = {st: (current[st] if st not in weights else 0 if current[st] == 0 else min(100, current[st] + MAX_MIX_SHIFT)) for st in STAGES}
+    out = {st: max(lo[st], min(hi[st], round(target[st]))) for st in STAGES}
+    while sum(out.values()) != 100:
+        diff = 100 - sum(out.values())
+        room = {st: ((hi[st] - out[st]) if diff > 0 else (out[st] - lo[st])) for st in STAGES}
+        st = max(STAGES, key=lambda k: (room[k], target[k] if diff > 0 else -target[k]))
+        if room[st] <= 0:
+            break
+        out[st] += 1 if diff > 0 else -1
+    reasons = []
+    for st in STAGES:
+        if out[st] != current[st]:
+            verb = "up" if out[st] > current[st] else "down"
+            reasons.append(f"{STAGE_GOAL[Stage(st)]} ({st.upper()}) {verb} from {current[st]}% to {out[st]}%: {notes.get(st, 'no clear signal')}.")
+    thin = [st.upper() for st in STAGES if len(per_stage[st]) < MIN_GROUP and current[st] > 0]
+    if thin:
+        reasons.append(f"Not enough results to judge {', '.join(thin)}, so {'it was' if len(thin) == 1 else 'they were'} left out of the comparison.")
+    if not any(out[st] != current[st] for st in STAGES):
+        reasons.insert(0, "Your results don't point to a clear change: keep your current mix.")
+    return {"ready": True, "current": dict(current), "suggested": out, "changed": out != dict(current), "reasons": reasons}
+
+
+def build_report(rows: list[dict], now: datetime, since: datetime, days: int, current_mix: dict[str, int] | None = None) -> dict:
     """rows: one dict per slot in the window with keys slot_id, scheduled_at, platform, pillar, post_type, stage, topic,
     status and metrics (a dict of counts, or None when no results were entered)."""
     published = [r for r in rows if r["status"] in PUBLISHED]
@@ -137,6 +194,7 @@ def build_report(rows: list[dict], now: datetime, since: datetime, days: int) ->
         "bottom": bottom,
         "adherence": {"due": expected, "published": done, "skipped": skipped, "rate": _round(_ratio(done, expected), 3)},
         "mix": mix,
+        "mix_suggestion": suggest_mix(measured, current_mix or DEFAULT_MIX),
         "waiting": [{"slot_id": r["slot_id"], "topic": r["topic"], "platform": r["platform"], "scheduled_at": r["scheduled_at"]} for r in published if not r["metrics"]],
         "note": (f"Based on only {len(measured)} measured post{'s' if len(measured) != 1 else ''}: treat these as hints, not conclusions." if len(measured) < SMALL_SAMPLE else None),
     }

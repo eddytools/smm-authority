@@ -459,6 +459,11 @@ def test_insights_endpoint_end_to_end(client, alice):
     # a narrower window excludes older posts
     assert client.get(f"/ventures/{vid}/insights?days=7", headers=alice).status_code == 200
     assert client.get(f"/ventures/{vid}/insights?days=3", headers=alice).status_code == 422
+    # the mix suggestion is computed against the mix the caller is planning with
+    assert r["mix_suggestion"]["current"] == {"tofu": 50, "mofu": 30, "bofu": 20} and r["mix_suggestion"]["ready"] is False
+    custom = client.get(f"/ventures/{vid}/insights?tofu=70&mofu=20&bofu=10", headers=alice).json()["mix_suggestion"]
+    assert custom["current"] == {"tofu": 70, "mofu": 20, "bofu": 10}
+    assert client.get(f"/ventures/{vid}/insights?tofu=70&mofu=20&bofu=20", headers=alice).status_code == 422
 
 
 def test_deleting_a_venture_removes_metrics(client, alice):

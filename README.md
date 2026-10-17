@@ -59,7 +59,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Trend feed](docs/screenshots/03-trend-feed.png) **Trend feed** | ![Planner](docs/screenshots/04-planner-week.png) **Content planner** |
 | ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
-| ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | |
+| ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | ![Mix suggestion](docs/screenshots/13-mix-suggestion.png) **Planner: funnel mix suggested from results** |
 
 ## API overview
 
@@ -81,7 +81,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/plan` (`start`, `end`, `status`, `include_archived`) | owner or admin |
 | POST / PATCH / DELETE | `/ventures/{id}/plan/slots[/{slot}]` | owner or admin |
 | POST | `/ventures/{id}/plan/slots/{slot}/draft` (AI draft, not saved) | owner or admin |
-| GET | `/ventures/{id}/insights` (`days`) | owner or admin |
+| GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
 | GET | `/ventures/{id}/integrations`; POST `/ventures/{id}/integrations/{platform}/connect`; PATCH / DELETE `/ventures/{id}/integrations/{platform}` | owner or admin |
@@ -171,7 +171,14 @@ engagement rate = (reactions + comments + shares + saves) / impressions, weighte
 stage, post type, platform and pillar. A group is called a "win" at 1.25x your average and a "loss" at 0.75x, and only
 once it has at least 2 posts. The report also lists best and weakest posts, which stage brought the leads, planned versus
 published funnel mix, and how many planned posts were actually published. With fewer than 10 measured posts the page says
-so: treat the results as hints. The planner does not change by itself; adjust the funnel mix when generating the next plan.
+so: treat the results as hints.
+
+**Suggested funnel mix.** On the Planner page, "Suggest a mix from my results" compares each funnel stage with your average
+(engagement rate, plus leads per post once there are 3 or more leads) and proposes a mix. It needs 12 measured posts, moves
+a stage by at most 10 points, never drops a stage you use below 10%, and leaves any stage with fewer than 2 measured posts
+exactly as it is. It only fills the form: nothing changes until you press "Use this mix" and then generate a plan. It is a
+rule-based nudge from a small sample, not an optimiser, and it can't tell whether a stage did well because of the stage
+or because of the topics you happened to post.
 
 ## Publishing to LinkedIn and X
 
