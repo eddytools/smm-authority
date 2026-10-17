@@ -61,6 +61,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
 | ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | ![Mix suggestion](docs/screenshots/13-mix-suggestion.png) **Planner: funnel mix suggested from results** |
 | ![Influencer watch](docs/screenshots/14-influencer-watch.png) **Influencer watch: topics several voices are discussing** | ![Community heat](docs/screenshots/15-community-heat.png) **Community heat: rising and cooling topics** |
+| ![Top posts](docs/screenshots/16-top-posts.png) **Why top posts win: shared patterns** | |
 
 ## API overview
 
@@ -90,6 +91,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | PATCH/DELETE | `/ventures/{id}/communities/{id}` | owner or admin |
 | POST | `/ventures/{id}/communities/{id}/posts` (paste a post: likes + comments) | owner or admin |
 | GET | `/ventures/{id}/communities/heat` (`days`) | owner or admin |
+| GET | `/ventures/{id}/top-posts` (`days`) | owner or admin |
 | GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
@@ -223,6 +225,20 @@ The page (`app/heat.py`, plain code, not AI) turns that into:
 Limits: topics are single words (so some filler words like "stopped" or "looking" slip through); a small sample is flagged under
 10 posts; Reddit's hot listing is a snapshot at fetch time, so engagement on older posts is only as fresh as the last refresh;
 pasted numbers are only as accurate as what you type. 15 groups per venture.
+
+## Why top posts win
+
+Looks at the posts you already collect from sources that expose engagement (subreddits, influencers, groups; news and RSS
+feeds are left out) and asks what the high performers have in common. A post is a **high performer** when it beats its own
+source's median post by 1.5x. Each post is tagged with checkable features (`app/anatomy.py`, plain code, not AI): opens with a
+question, number in the first line, contrarian wording, how-to/playbook wording, starts with "I"/"we", is a list (3+ bullets),
+length (short <300, medium 300-900, long >900 characters) and contains a link. A feature "works" at 1.25x the average
+relative engagement and "falls flat" at 0.75x (same thresholds as Performance), judged only with 3+ posts and 12+ posts overall.
+Each verdict comes with a one-line way to try it in your own posts, and the page lists the top posts with their tags.
+
+Limits: these are correlations in small samples (a post may win on topic, timing or author, not shape); the features are
+simple pattern matches (the hook is the headline, so a Reddit title is the hook, not the first line of its body); and engagement
+for pasted posts is whatever you typed. Test a pattern in your own posts, then check Performance.
 
 ## Publishing to LinkedIn and X
 

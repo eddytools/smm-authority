@@ -108,6 +108,10 @@ export default function VentureDetail() {
           <h4>Community heat</h4>
           <p className="muted small">Which topics are getting likes and comments in the groups your audience is in.</p>
         </Link>
+        <Link to={`/ventures/${venture.id}/top-posts`} className="card linkcard">
+          <h4>Why top posts win</h4>
+          <p className="muted small">What the high-engagement posts you track have in common: hooks, length and format.</p>
+        </Link>
         <Link to={`/ventures/${venture.id}/replies`} className="card linkcard">
           <h4>Quick replies</h4>
           <p className="muted small">Helpful answers to questions in communities, drafted for you to post yourself.</p>

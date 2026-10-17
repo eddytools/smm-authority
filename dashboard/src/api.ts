@@ -306,6 +306,25 @@ export interface Heat {
   note: string | null;
 }
 
+export interface TopPattern {
+  tag: string;
+  label: string;
+  verdict: "works" | "flat";
+  posts: number;
+  lift: number;
+  high_share: number;
+  advice: string;
+  example: { title: string; url: string; community: string; engagement: number };
+}
+export interface TopPosts {
+  days: number;
+  posts: number;
+  high_performers: number;
+  patterns: TopPattern[];
+  top: { title: string; url: string; community: string; engagement: number; relative: number; tags: string[] }[];
+  note: string | null;
+}
+
 export interface ImportResult {
   imported: number;
   errors: { row: number; message: string }[];
@@ -479,6 +498,7 @@ export const api = {
   addCommunityPost: (vid: number, id: number, data: { url: string; text: string; likes: number; comments: number }) =>
     request<{ id: number }>(`/ventures/${vid}/communities/${id}/posts`, json("POST", data)),
   getHeat: (vid: number, days = 14) => request<Heat>(`/ventures/${vid}/communities/heat?days=${days}`),
+  getTopPosts: (vid: number, days = 60) => request<TopPosts>(`/ventures/${vid}/top-posts?days=${days}`),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
   getInsights: (vid: number, days: number, mix?: Record<Stage, number>) =>

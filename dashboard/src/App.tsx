@@ -8,6 +8,7 @@ import VentureDetail from "./pages/VentureDetail";
 import VentureFeed from "./pages/VentureFeed";
 import VentureCommunities from "./pages/VentureCommunities";
 import VentureInfluencers from "./pages/VentureInfluencers";
+import VentureTopPosts from "./pages/VentureTopPosts";
 import VentureInsights from "./pages/VentureInsights";
 import VenturePlan from "./pages/VenturePlan";
 import VentureReplies from "./pages/VentureReplies";
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="ventures/:id/feed" element={<VentureFeed />} />
           <Route path="ventures/:id/influencers" element={<VentureInfluencers />} />
           <Route path="ventures/:id/communities" element={<VentureCommunities />} />
+          <Route path="ventures/:id/top-posts" element={<VentureTopPosts />} />
           <Route path="ventures/:id/plan" element={<VenturePlan />} />
           <Route path="ventures/:id/insights" element={<VentureInsights />} />
           <Route path="ventures/:id/publishing" element={<VenturePublishing />} />
