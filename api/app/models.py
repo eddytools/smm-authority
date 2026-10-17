@@ -115,6 +115,7 @@ class SourceType(str, enum.Enum):
     rss = "rss"
     reddit = "reddit"
     google_news = "google_news"
+    manual = "manual"  # posts are pasted in by hand (e.g. an influencer on LinkedIn or X, which can't be read automatically)
 
 
 class Source(Base):
@@ -136,6 +137,26 @@ class Source(Base):
 
     venture: Mapped[Venture] = relationship(back_populates="sources")
     items: Mapped[list["FeedItem"]] = relationship(back_populates="source", cascade="all, delete-orphan", passive_deletes=True)
+    influencer: Mapped["Influencer | None"] = relationship(back_populates="source", lazy="joined", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
+
+
+class Influencer(Base):
+    """A person or publication the venture watches. Their posts arrive through a Source (their RSS/Atom feed when they have
+    one, otherwise a manual source) so they land in the same feed and scoring as everything else."""
+
+    __tablename__ = "influencers"
+    __table_args__ = (UniqueConstraint("venture_id", "name", name="uq_influencer_venture_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    platform: Mapped[str] = mapped_column(String(20))
+    profile_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    notes: Mapped[str | None] = mapped_column(String(300), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    source: Mapped[Source] = relationship(back_populates="influencer")
 
 
 class ItemStatus(str, enum.Enum):
@@ -174,6 +195,10 @@ class FeedItem(Base):
     @property
     def source_type(self) -> str:
         return self.source.type.value
+
+    @property
+    def influencer_name(self) -> str | None:
+        return self.source.influencer.name if self.source.influencer else None
 
     @property
     def source_label(self) -> str:

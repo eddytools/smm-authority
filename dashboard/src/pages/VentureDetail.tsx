@@ -100,6 +100,10 @@ export default function VentureDetail() {
           <h4>Publishing</h4>
           <p className="muted small">Connect LinkedIn and X so approved posts go out on schedule.</p>
         </Link>
+        <Link to={`/ventures/${venture.id}/influencers`} className="card linkcard">
+          <h4>Influencer watch</h4>
+          <p className="muted small">Follow the voices in your niche and see what they're all talking about.</p>
+        </Link>
         <Link to={`/ventures/${venture.id}/replies`} className="card linkcard">
           <h4>Quick replies</h4>
           <p className="muted small">Helpful answers to questions in communities, drafted for you to post yourself.</p>

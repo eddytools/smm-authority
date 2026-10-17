@@ -8,8 +8,9 @@ const PLACEHOLDER: Record<SourceType, string> = {
   rss: "https://example.com/feed.xml",
   reddit: "subreddit, e.g. startups",
   google_news: "search query, e.g. founder-led growth",
+  manual: "",
 };
-const TYPE_LABEL: Record<SourceType, string> = { rss: "RSS", reddit: "Reddit", google_news: "Google News" };
+const TYPE_LABEL: Record<SourceType, string> = { rss: "RSS", reddit: "Reddit", google_news: "Google News", manual: "Pasted" };
 
 function ago(iso: string): string {
   const hours = Math.max(0, (Date.now() - new Date(iso).getTime()) / 3_600_000);
@@ -184,7 +185,7 @@ export default function VentureFeed() {
               ) : (
                 <span className="score rule" title="Match score (setup keywords, freshness, engagement). Use Score with AI for a sharper ranking.">{Math.round(item.rule_score)}</span>
               )}
-              <span>{item.source_label}</span>
+              <span>{item.influencer_name ? `★ ${item.influencer_name}` : item.source_label}</span>
               <span>{ago(item.published_at)}</span>
               {item.engagement > 0 && <span>{item.engagement} engagement</span>}
               <span className="spacer" />

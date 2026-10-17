@@ -60,6 +60,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
 | ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | ![Mix suggestion](docs/screenshots/13-mix-suggestion.png) **Planner: funnel mix suggested from results** |
+| ![Influencer watch](docs/screenshots/14-influencer-watch.png) **Influencer watch: topics several voices are discussing** | |
 
 ## API overview
 
@@ -81,6 +82,10 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET | `/ventures/{id}/plan` (`start`, `end`, `status`, `include_archived`) | owner or admin |
 | POST / PATCH / DELETE | `/ventures/{id}/plan/slots[/{slot}]` | owner or admin |
 | POST | `/ventures/{id}/plan/slots/{slot}/draft` (AI draft, not saved) | owner or admin |
+| GET/POST | `/ventures/{id}/influencers` | owner or admin |
+| PATCH/DELETE | `/ventures/{id}/influencers/{id}` | owner or admin |
+| POST | `/ventures/{id}/influencers/{id}/posts` (paste a post) | owner or admin |
+| GET | `/ventures/{id}/influencers/digest` (`days`) | owner or admin |
 | GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
@@ -179,6 +184,23 @@ a stage by at most 10 points, never drops a stage you use below 10%, and leaves 
 exactly as it is. It only fills the form: nothing changes until you press "Use this mix" and then generate a plan. It is a
 rule-based nudge from a small sample, not an optimiser, and it can't tell whether a stage did well because of the stage
 or because of the topics you happened to post.
+
+## Influencer watch
+
+Follow the people your customers already listen to. Each influencer has a name, a platform and, optionally, a feed link.
+**Feed-capable ones** (blogs, newsletters, YouTube channels, a Reddit user's `.rss`) are fetched by the same ingest script as
+every other source. **LinkedIn and X can't be read automatically** (no usable public feed, and scraping breaks their terms),
+so for those you paste in the posts you notice, with the reaction and comment count shown on the post. Either way the posts land
+in your trend feed, marked with a ★ and the person's name, and are scored like any other item.
+
+"What they're talking about" is plain code (`app/influence.py`), not AI: a word counts as a topic when it appears in at least
+2 posts from at least 2 different people in the window (so one person repeating themselves isn't a trend). Topics are ranked
+by how many voices share them, then posts, then whether they match your niche. Each is marked "you've covered it" or "not in
+your plan" by comparing with your own planned and recent posts, and has a "Plan my take" button that adds an idea to the
+planner (you write the post yourself). Removing an influencer also removes their collected posts, saved ones included.
+
+Limits: 25 influencers per venture; topics are single words (crudely merged plurals, no phrases or synonyms), so a word like
+"offer" can show up without meaning much; pasted posts and their numbers are only as accurate as what you type.
 
 ## Publishing to LinkedIn and X
 

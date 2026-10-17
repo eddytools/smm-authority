@@ -19,7 +19,7 @@ from app.db import make_engine, prepare_schema
 from app.feed_parsers import ParseError, build_url, parse_for, url_hash
 from app.fetch import FetchError, FetchResult, safe_fetch
 from app.jobs.scoring import brief_keywords, rule_score
-from app.models import BriefVersion, FeedItem, ItemStatus, Source, Venture
+from app.models import BriefVersion, FeedItem, ItemStatus, Source, SourceType, Venture
 
 log = logging.getLogger("smm.ingest")
 Fetcher = Callable[[str, str], FetchResult]  # (url, accept) -> result
@@ -58,7 +58,7 @@ def ingest_venture(db: Session, venture: Venture, fetch: Fetcher, settings: Sett
     now = now or datetime.now(timezone.utc)
     report = IngestReport()
     kws = brief_keywords(venture.name, venture.niche, _latest_brief(db, venture.id))
-    sources = db.scalars(select(Source).where(Source.venture_id == venture.id, Source.enabled.is_(True)).order_by(Source.id)).all()
+    sources = db.scalars(select(Source).where(Source.venture_id == venture.id, Source.enabled.is_(True), Source.type != SourceType.manual).order_by(Source.id)).all()
 
     for source in sources:
         sr = SourceReport(source_id=source.id, status="ok")

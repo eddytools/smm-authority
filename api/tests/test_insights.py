@@ -119,7 +119,7 @@ def test_demo_seed_builds_a_complete_venture_and_a_readable_story(tmp_path):
 
     from app.db import Base, make_engine
     from app.demo import DEMO_EMAIL, seed
-    from app.models import BriefVersion, FeedItem, PlanSlot, PostMetric, User
+    from app.models import BriefVersion, FeedItem, Influencer, PlanSlot, PostMetric, User
 
     engine = make_engine(f"sqlite:///{tmp_path}/demo.db")
     Base.metadata.create_all(engine)
@@ -131,7 +131,11 @@ def test_demo_seed_builds_a_complete_venture_and_a_readable_story(tmp_path):
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(User).where(User.email == DEMO_EMAIL)) == 1
         assert db.scalar(select(func.count()).select_from(BriefVersion)) == 1
-        assert db.scalar(select(func.count()).select_from(FeedItem)) == 10
+        assert db.scalar(select(func.count()).select_from(FeedItem)) == 15  # 10 trend items + 5 influencer posts
+        from app.influence import terms
+
+        posts = db.execute(select(FeedItem).join(Influencer, Influencer.source_id == FeedItem.source_id)).scalars().all()
+        assert len(posts) == 5 and any("webinar" in terms(p.title, p.summary) for p in posts)
         slots = db.scalars(select(PlanSlot)).unique().all()
         assert len(slots) > 40 and db.scalar(select(func.count()).select_from(PostMetric)) >= 15
         rows = [

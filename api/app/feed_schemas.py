@@ -22,6 +22,8 @@ class SourceCreate(BaseModel):
     @model_validator(mode="after")
     def _normalise_target(self):
         t = self.target
+        if self.type == SourceType.manual:
+            raise ValueError("Manual sources are created by adding an influencer")
         if self.type == SourceType.rss:
             try:
                 url = _check_url(t)
@@ -67,6 +69,7 @@ class FeedItemOut(ORM):
     source_id: int
     source_type: str
     source_label: str
+    influencer_name: str | None
     url: str
     title: str
     summary: str | None

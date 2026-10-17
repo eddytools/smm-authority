@@ -70,7 +70,7 @@ export interface BriefSuggestion {
   rationale: string;
 }
 
-export type SourceType = "rss" | "reddit" | "google_news";
+export type SourceType = "rss" | "reddit" | "google_news" | "manual";
 export interface Source {
   id: number;
   type: SourceType;
@@ -88,6 +88,7 @@ export interface FeedItem {
   source_id: number;
   source_type: SourceType;
   source_label: string;
+  influencer_name: string | null;
   url: string;
   title: string;
   summary: string | null;
@@ -231,6 +232,41 @@ export interface Insights {
   mix: Record<Stage, { planned: number; published: number }>;
   mix_suggestion: MixSuggestion;
   waiting: { slot_id: number; topic: string; platform: string; scheduled_at: string }[];
+  note: string | null;
+}
+
+export type InfluencerPlatform = "linkedin" | "x" | "reddit" | "youtube" | "blog" | "newsletter" | "other";
+export interface Influencer {
+  id: number;
+  name: string;
+  platform: InfluencerPlatform;
+  profile_url: string | null;
+  notes: string | null;
+  source_id: number;
+  feed_url: string | null;
+  enabled: boolean;
+  posts_30d: number;
+  avg_engagement: number | null;
+  last_post_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+export interface Topic {
+  term: string;
+  posts: number;
+  voices: number;
+  influencers: string[];
+  engagement: number;
+  in_niche: boolean;
+  covered: boolean;
+  example: { title: string; url: string; influencer: string; engagement: number };
+}
+export interface Digest {
+  days: number;
+  posts: number;
+  topics: Topic[];
+  gaps: string[];
+  voices: { influencer_id: number; influencer: string; posts: number; avg_engagement: number; top_post: { title: string; url: string; engagement: number } }[];
   note: string | null;
 }
 
@@ -389,6 +425,16 @@ export const api = {
     request<PlanSlot>(`/ventures/${vid}/plan/slots/${id}`, json("PATCH", data)),
   draftSlot: (vid: number, id: number, instructions: string | null) =>
     request<DraftResult>(`/ventures/${vid}/plan/slots/${id}/draft`, json("POST", { instructions })),
+  createSlot: (vid: number, data: { scheduled_at: string; platform: string; post_type: string; topic: string }) =>
+    request<PlanSlot>(`/ventures/${vid}/plan/slots`, json("POST", data)),
+  listInfluencers: (vid: number) => request<Influencer[]>(`/ventures/${vid}/influencers`),
+  addInfluencer: (vid: number, data: { name: string; platform: InfluencerPlatform; profile_url?: string; feed_url?: string; notes?: string }) =>
+    request<Influencer>(`/ventures/${vid}/influencers`, json("POST", data)),
+  updateInfluencer: (vid: number, id: number, data: { notes?: string; enabled?: boolean }) => request<Influencer>(`/ventures/${vid}/influencers/${id}`, json("PATCH", data)),
+  deleteInfluencer: (vid: number, id: number) => request<void>(`/ventures/${vid}/influencers/${id}`, { method: "DELETE" }),
+  addInfluencerPost: (vid: number, id: number, data: { url: string; text: string; engagement: number }) =>
+    request<{ id: number }>(`/ventures/${vid}/influencers/${id}/posts`, json("POST", data)),
+  getDigest: (vid: number, days = 14) => request<Digest>(`/ventures/${vid}/influencers/digest?days=${days}`),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
   getInsights: (vid: number, days: number, mix?: Record<Stage, number>) =>

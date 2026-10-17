@@ -16,10 +16,24 @@ from app.config import get_settings
 from app.db import make_engine, prepare_schema
 from app.framework import DEFAULT_MIX, SlotStatus
 from app.jobs.scoring import brief_keywords, rule_score
-from app.models import BriefVersion, FeedItem, ItemStatus, PlanSlot, PostMetric, Role, Source, SourceType, User, Venture
+from app.feed_parsers import url_hash
+from app.models import BriefVersion, FeedItem, Influencer, ItemStatus, PlanSlot, PostMetric, Role, Source, SourceType, User, Venture
 from app.planner import Candidate, generate
 from app.security import hash_password
 
+INFLUENCERS = [
+    ("Dana Whitfield (fictional)", "linkedin", "Founder-led marketing for B2B SaaS", [
+        ("Webinars quietly beat cold outreach for inbound leads", "We ran 6 webinars last quarter. Inbound leads from them cost a third of outbound. Here is the setup.", 2, 410),
+        ("Your pricing page is a marketing asset", "Most SaaS founders hide pricing. Showing it filtered our leads and doubled demo quality.", 6, 260),
+    ]),
+    ("Marcus Lee (fictional)", "blog", "Newsletter operator, practical SaaS growth", [
+        ("How we grew a founder newsletter to 5,000 readers", "Webinars were our best newsletter growth channel. Pricing experiments came second.", 3, 150),
+        ("Inbound leads from a newsletter: what the numbers say", "Newsletter readers convert 3x better than cold traffic when the offer is clear.", 9, 95),
+    ]),
+    ("Priya Nair (fictional)", "x", "Posts threads on founder content", [
+        ("Thread: why your LinkedIn posts never turn into leads", "Posting is not the problem. A clear offer and a webinar-style follow-up is. Pricing clarity helps too.", 1, 320),
+    ]),
+]
 DEMO_EMAIL, DEMO_PASSWORD = "demo@example.com", "demo-password-1"
 
 BRIEF = {
@@ -113,6 +127,16 @@ def seed(session_factory, reset: bool = False, now: datetime | None = None) -> s
             db.flush()
             if item.status == ItemStatus.saved:
                 saved_items.append(Candidate(item.id, title, 90, True))
+
+        for name, platform, note, posts in INFLUENCERS:
+            src = Source(venture_id=v.id, type=SourceType.manual, target=f"influencer:demo-{name.split()[0].lower()}", label=name)
+            db.add(Influencer(venture_id=v.id, name=name, platform=platform, notes=note, source=src))
+            db.flush()
+            for j, (title, text, days, eng) in enumerate(posts):
+                url = f"https://example.com/demo-influencers/{name.split()[0].lower()}-{j}"
+                published = now - timedelta(days=days)
+                db.add(FeedItem(venture_id=v.id, source_id=src.id, url=url, url_hash=url_hash(url), title=title, summary=text, author=name, published_at=published, fetched_at=now,
+                                engagement=eng, rule_score=rule_score(title, text, published, eng, kws, now)))
 
         tz = ZoneInfo("UTC")
         today = now.date()

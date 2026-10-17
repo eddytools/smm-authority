@@ -166,3 +166,9 @@ button.hook { font-size: .8rem; text-align: left; max-width: 100%; }
 .idea h5 { margin: 0 0 .2rem; }
 .warn-list { margin: .3rem 0 .6rem; padding: .5rem .8rem .5rem 1.6rem; background: var(--mofu-bg); border-radius: 7px; font-size: .86rem; }
 .stop { border-left: 4px solid var(--bofu); }
+
+ul.plain { list-style: none; padding: 0; margin: .5rem 0 0; }
+ul.plain li { padding: .55rem 0; border-top: 1px solid var(--border); }
+ul.plain li:first-child { border-top: 0; }
+.stack { display: flex; flex-direction: column; gap: .6rem; margin-top: .75rem; }
+.influencer { padding: .6rem 0; border-top: 1px solid var(--border); }

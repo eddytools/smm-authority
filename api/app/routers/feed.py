@@ -21,14 +21,14 @@ from app.feed_schemas import (
     SourceUpdate,
 )
 from app.jobs.ingest import ingest_venture
-from app.models import BriefVersion, FeedItem, ItemStatus, Source
+from app.models import BriefVersion, FeedItem, ItemStatus, Source, SourceType
 
 router = APIRouter(prefix="/ventures/{venture_id}", tags=["trend feed"])
 
 
 def _get_source(db, venture_id: int, source_id: int) -> Source:
     source = db.get(Source, source_id)
-    if source is None or source.venture_id != venture_id:
+    if source is None or source.venture_id != venture_id or source.influencer is not None:  # influencer sources are managed with the influencer
         raise HTTPException(404, "Source not found")
     return source
 
@@ -38,13 +38,13 @@ def _get_source(db, venture_id: int, source_id: int) -> Source:
 @router.get("/sources", response_model=list[SourceOut])
 def list_sources(venture_id: int, user: CurrentUser, db: DbSession):
     get_accessible_venture(db, venture_id, user)
-    return db.scalars(select(Source).where(Source.venture_id == venture_id).order_by(Source.id)).all()
+    return [src for src in db.scalars(select(Source).where(Source.venture_id == venture_id).order_by(Source.id)).unique().all() if src.influencer is None]
 
 
 @router.post("/sources", response_model=SourceOut, status_code=201)
 def add_source(venture_id: int, body: SourceCreate, user: CurrentUser, db: DbSession):
     get_accessible_venture(db, venture_id, user)
-    count = db.scalar(select(func.count()).select_from(Source).where(Source.venture_id == venture_id))
+    count = db.scalar(select(func.count()).select_from(Source).where(Source.venture_id == venture_id, Source.type != SourceType.manual))
     if count >= MAX_SOURCES_PER_VENTURE:
         raise HTTPException(400, f"A venture can have at most {MAX_SOURCES_PER_VENTURE} sources")
     source = Source(venture_id=venture_id, type=body.type, target=body.target, label=body.label)
