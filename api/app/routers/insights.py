@@ -3,19 +3,22 @@ import io
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select
 
 from app.access import get_accessible_venture
 from app.deps import CurrentUser, DbSession
 from app.framework import DEFAULT_MIX, SlotStatus
+from app.analytics import AUTO_FIELDS, PULL_AFTER, refresh_slot, supports_metrics
 from app.insights import PUBLISHED, build_report
 from app.metrics_schemas import ImportError_, ImportOut, ImportRequest, MetricsIn, MetricsOut
 from app.models import PlanSlot, PostMetric
+from app.publishing import _as_utc as as_utc, active_connection
 
 router = APIRouter(prefix="/ventures/{venture_id}", tags=["performance"])
 FIELDS = ("impressions", "reactions", "comments", "shares", "saves", "clicks", "follows", "leads")
 MAX_IMPORT_ROWS = 500
+REFRESH_MIN_SECONDS = 120
 
 
 def _slot(db, venture_id: int, slot_id: int) -> PlanSlot:
@@ -33,9 +36,13 @@ def _save(db, slot: PlanSlot, values: dict, source: str) -> None:
     if metric is None:
         metric = PostMetric(slot_id=slot.id)
         slot.metric = metric
+    # Numbers pulled from the platform stay "auto" while you only add what it can't see (clicks, follows, leads); changing a
+    # platform number yourself makes it yours, and the scheduled pull stops overwriting it.
+    keeps_auto = metric.source == "auto" and all(getattr(metric, f) == values.get(f, getattr(metric, f)) for f in AUTO_FIELDS)
     for key, value in values.items():
         setattr(metric, key, value)
-    metric.source = source
+    if not keeps_auto:
+        metric.source = source
     if slot.status == SlotStatus.published:
         slot.status = SlotStatus.analysed
 
@@ -44,6 +51,43 @@ def _save(db, slot: PlanSlot, values: dict, source: str) -> None:
 def get_metrics(venture_id: int, slot_id: int, user: CurrentUser, db: DbSession):
     get_accessible_venture(db, venture_id, user)
     return _slot(db, venture_id, slot_id).metric
+
+
+@router.get("/plan/slots/{slot_id}/metrics/auto")
+def auto_status(venture_id: int, slot_id: int, request: Request, user: CurrentUser, db: DbSession):
+    """Whether this post's numbers come from the platform, and when the next scheduled pull is."""
+    get_accessible_venture(db, venture_id, user)
+    slot = _slot(db, venture_id, slot_id)
+    publishing = request.app.state.publishing
+    supported = supports_metrics(publishing, slot.platform)
+    connected = supported and active_connection(db, venture_id, slot.platform) is not None
+    next_at = None
+    if supported and slot.external_id and slot.published_at and slot.metrics_pull_count < len(PULL_AFTER) and (slot.metric is None or slot.metric.source == "auto"):
+        next_at = as_utc(slot.published_at) + PULL_AFTER[slot.metrics_pull_count]
+    return {
+        "supported": supported, "connected": connected, "published_here": bool(slot.external_id),
+        "source": slot.metric.source if slot.metric else None, "last_pulled_at": slot.metrics_pulled_at, "error": slot.metrics_error,
+        "pulls_done": min(slot.metrics_pull_count, len(PULL_AFTER)), "pulls_total": len(PULL_AFTER), "next_pull_at": next_at,
+    }
+
+
+@router.post("/plan/slots/{slot_id}/metrics/refresh", response_model=MetricsOut)
+def refresh_metrics(venture_id: int, slot_id: int, request: Request, user: CurrentUser, db: DbSession):
+    """Read this post's numbers from the platform now (and hand it back to automatic updates)."""
+    get_accessible_venture(db, venture_id, user)
+    slot = _slot(db, venture_id, slot_id)
+    pulled = slot.metrics_pulled_at
+    if pulled is not None and (datetime.now(timezone.utc) - as_utc(pulled)).total_seconds() < REFRESH_MIN_SECONDS:
+        raise HTTPException(429, "Refreshed a moment ago. Try again in a few minutes.")
+    out = refresh_slot(db, slot, request.app.state.publishing)
+    if out.status == "skipped":
+        raise HTTPException(400, out.message)
+    if out.status == "reconnect":
+        raise HTTPException(409, out.message or "Reconnect the account.")
+    if out.status != "updated":
+        raise HTTPException(502, out.message or "The platform didn't return numbers for this post.")
+    db.refresh(slot)
+    return slot.metric
 
 
 @router.put("/plan/slots/{slot_id}/metrics", response_model=MetricsOut)

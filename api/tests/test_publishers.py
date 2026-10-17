@@ -193,3 +193,43 @@ def test_network_failure_is_transient_and_garbage_responses_are_safe():
     except ProviderError as exc:
         msg = exc.message
     assert "403" in msg and "Not enough permissions" in msg
+
+
+# --- X post numbers -------------------------------------------------------------------
+
+def test_x_metrics_request_and_mapping():
+    http = Recorder(resp(200, {"data": [
+        {"id": "1", "public_metrics": {"impression_count": 900, "like_count": 30, "reply_count": 4, "retweet_count": 5, "quote_count": 2, "bookmark_count": 7}},
+        {"id": "2", "public_metrics": {"like_count": 3, "retweet_count": 0}},  # no impressions or replies reported
+    ], "errors": [{"resource_id": "3", "title": "Not Found Error"}]}))
+    out = X("id", "secret", http=http).fetch_metrics("tok", ["1", "2", "3"])
+    assert out["1"] == {"impressions": 900, "reactions": 30, "comments": 4, "saves": 7, "shares": 7}
+    assert out["2"] == {"reactions": 3, "shares": 0}  # absent numbers are left out, never guessed as zero
+    assert out["3"] is None  # deleted or unknown
+    call = http.calls[0]
+    assert call["method"] == "GET" and call["headers"]["Authorization"] == "Bearer tok"
+    q = parse_qs(urlparse(call["url"]).query)
+    assert urlparse(call["url"]).path == "/2/tweets" and q["ids"] == ["1,2,3"] and q["tweet.fields"] == ["public_metrics"]
+
+
+def test_x_metrics_ignores_bad_values_and_odd_shapes():
+    out = X("i", "s", http=Recorder(resp(200, {"data": [{"id": "1", "public_metrics": {"like_count": -5, "reply_count": "9", "impression_count": True, "bookmark_count": 2}}, "junk", {"id": "99", "public_metrics": {"like_count": 1}}]}))).fetch_metrics("t", ["1"])
+    assert out == {"1": {"saves": 2}}
+    with pytest.raises(ProviderError, match="unexpected"):
+        X("i", "s", http=Recorder(resp(200, ["nope"]))).fetch_metrics("t", ["1"])
+
+
+def test_x_metrics_errors_are_classified():
+    with pytest.raises(ProviderError) as e:
+        X("i", "s", http=Recorder(resp(401, {"title": "Unauthorized"}))).fetch_metrics("t", ["1"])
+    assert e.value.reauth and e.value.status == 401
+    with pytest.raises(ProviderError) as e:
+        X("i", "s", http=Recorder(resp(403, {"detail": "Your client app is not permitted"}))).fetch_metrics("t", ["1"])
+    assert not e.value.reauth and not e.value.transient and e.value.status == 403
+    with pytest.raises(ProviderError) as e:
+        X("i", "s", http=Recorder(resp(429, {}))).fetch_metrics("t", ["1"])
+    assert e.value.transient and e.value.status == 429
+
+
+def test_linkedin_does_not_claim_to_read_metrics():
+    assert LinkedIn("i", "s", "202609").metrics_supported is False and X("i", "s").metrics_supported is True

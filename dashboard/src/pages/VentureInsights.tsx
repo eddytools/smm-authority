@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, type Group, type ImportResult, type Insights, type Metrics, type PlanSlot, type Stage, type Venture } from "../api";
+import { api, type AutoStatus, type Group, type ImportResult, type Insights, type Metrics, type PlanSlot, type Stage, type Venture } from "../api";
 
 type Dim = "stage" | "post_type" | "platform" | "pillar";
 const DIMS: { key: Dim; title: string }[] = [
@@ -200,7 +200,7 @@ export default function VentureInsights() {
             <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: "none" }} aria-label="Import results CSV" />
           </label>
         </div>
-        <p className="muted small">Enter the numbers from each platform's own analytics (until they can be pulled in automatically). Posts waiting for results come first.</p>
+        <p className="muted small">Enter the numbers from each platform's own analytics. For posts the app published to X they are fetched automatically (see below); LinkedIn doesn't allow it. Posts waiting for results come first.</p>
         {imported && (
           <div className="notice" role="status">
             Imported {imported.imported} row{imported.imported === 1 ? "" : "s"}.
@@ -225,6 +225,7 @@ export default function VentureInsights() {
               <ResultsForm
                 vid={vid}
                 slotId={s.id}
+                onRefreshed={load}
                 onSaved={async () => {
                   setOpenId(null);
                   setNotice("Results saved.");
@@ -273,13 +274,50 @@ function PostLine({ p }: { p: { topic: string; platform: string; scheduled_at: s
   );
 }
 
-function ResultsForm({ vid, slotId, onSaved, onError }: { vid: number; slotId: number; onSaved: () => Promise<void>; onError: (m: string) => void }) {
+function AutoLine({ auto, source, busy, onRefresh }: { auto: AutoStatus; source: string | null; busy: boolean; onRefresh: () => void }) {
+  if (!auto.supported) return <p className="muted small">This platform doesn't let the app read post numbers (LinkedIn only offers them to approved partners), so enter them here.</p>;
+  if (!auto.published_here) return <p className="muted small">This post wasn't published through the app, so its numbers can't be fetched. Enter them here.</p>;
+  if (!auto.connected) return <p className="muted small">Reconnect the account on the Publishing page to fetch this post's numbers automatically.</p>;
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return (
+    <p className="small">
+      {source === "auto" || source === null ? "Impressions, reactions, comments, shares and saves are fetched from the platform automatically." : "You entered these numbers yourself, so they aren't updated automatically."}{" "}
+      {auto.last_pulled_at && <span className="muted">Last fetched {when(auto.last_pulled_at)}. </span>}
+      {auto.next_pull_at && (source === "auto" || source === null) && <span className="muted">Next around {when(auto.next_pull_at)} ({auto.pulls_done}/{auto.pulls_total} done). </span>}
+      {auto.error && <span className="error">{auto.error} </span>}
+      <button type="button" className="ghost" disabled={busy} onClick={onRefresh}>Refresh from the platform</button>
+    </p>
+  );
+}
+
+function ResultsForm({ vid, slotId, onSaved, onRefreshed, onError }: { vid: number; slotId: number; onSaved: () => Promise<void>; onRefreshed: () => Promise<void>; onError: (m: string) => void }) {
   const [v, setV] = useState<Metrics | null>(null);
   const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState<AutoStatus | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+  const loadAuto = useCallback(() => api.getMetricsAuto(vid, slotId).then(setAuto).catch(() => setAuto(null)), [vid, slotId]);
   useEffect(() => {
-    api.getMetrics(vid, slotId).then((m) => setV(m ?? EMPTY)).catch((e: Error) => onError(e.message));
-  }, [vid, slotId, onError]);
+    api.getMetrics(vid, slotId).then((m) => { setV(m ?? EMPTY); setSource(m?.source ?? null); }).catch((e: Error) => onError(e.message));
+    loadAuto();
+  }, [vid, slotId, onError, loadAuto]);
   if (!v) return <p className="muted small">Loading…</p>;
+
+  async function refresh() {
+    if (source && source !== "auto" && !window.confirm("Replace the impressions, reactions, comments, shares and saves you entered with the numbers from the platform? Link clicks, follows and leads stay as you entered them.")) return;
+    setBusy(true);
+    try {
+      const m = await api.refreshMetrics(vid, slotId);
+      setV(m);
+      setSource(m.source);
+      await loadAuto();
+      await onRefreshed();
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <form
       onSubmit={async (e) => {
@@ -294,6 +332,7 @@ function ResultsForm({ vid, slotId, onSaved, onError }: { vid: number; slotId: n
         }
       }}
     >
+      {auto && <AutoLine auto={auto} source={source} busy={busy} onRefresh={refresh} />}
       <div className="metric-form">
         {FIELDS.map((f) => (
           <label key={f.key}>

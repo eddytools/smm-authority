@@ -92,6 +92,8 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | POST | `/ventures/{id}/communities/{id}/posts` (paste a post: likes + comments) | owner or admin |
 | GET | `/ventures/{id}/communities/heat` (`days`) | owner or admin |
 | GET | `/ventures/{id}/top-posts` (`days`) | owner or admin |
+| GET | `/ventures/{id}/plan/slots/{id}/metrics/auto` (is this post's data automatic, next pull) | owner or admin |
+| POST | `/ventures/{id}/plan/slots/{id}/metrics/refresh` (read it from the platform now) | owner or admin |
 | GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
@@ -177,6 +179,15 @@ For each published post the author enters its results (impressions, reactions, c
 new follows, leads), one at a time or by CSV import (`slot_id` plus any of those columns; valid rows are imported and every
 bad row is reported by number). The first result moves a post from Published to Analysed.
 
+**Automatic results (X only).** For posts the app published to X, `python -m app.jobs.pull_metrics` (hourly from cron; `dev.sh`
+runs it) reads impressions, likes, replies, reposts + quotes and bookmarks 1, 3, 7 and 14 days after publishing (up to 4 reads per
+post, batched up to 100 posts per request) and fills the same results fields. It never touches link clicks, follows or leads. Numbers
+you typed or imported yourself are never overwritten by the job: editing a pulled number makes it yours, while adding leads or
+clicks to pulled numbers keeps them automatic. A "Refresh from the platform" button on each post reads the numbers now (after a
+confirm, if they were yours) and hands the post back to automatic updates. A rejected token marks the connection "needs
+reconnect"; a 403 or a deleted post stops pulling for that post and says why; transient errors retry on the next pass. LinkedIn
+posts stay hand-entered.
+
 **Insights are computed in plain code, not by AI** (`app/insights.py`), so they are free, reproducible and honest:
 engagement rate = (reactions + comments + shares + saves) / impressions, weighted by impressions, broken down by funnel
 stage, post type, platform and pillar. A group is called a "win" at 1.25x your average and a "loss" at 0.75x, and only
@@ -259,7 +270,10 @@ Connect an account per venture (Venture > Publishing). Approved posts that you *
 
 ```cron
 * * * * *  cd /srv/smm/api && .venv/bin/python -m app.jobs.publish_due >> /var/log/smm-publish.log 2>&1
+0 * * * *  cd /srv/smm/api && .venv/bin/python -m app.jobs.pull_metrics >> /var/log/smm-metrics.log 2>&1
 ```
+
+(The second line reads results for X posts: see Performance tracking.)
 
 **Set up the platforms** (an administrator does this once; the steps below are from the platforms' documentation as I could
 read it, so follow their current docs where they differ):
@@ -337,7 +351,11 @@ With `SMM_ENV=production` the API refuses to start without a random `SMM_SECRET_
   promotional one). The checks are blunt pattern matching: they will miss some things and flag some innocent ones, and
   "I posted it" is self-reported. The AI drafts are likely to read as AI-written: edit them into your own voice, and follow each
   platform's rules on AI-assisted content and on disclosing affiliation. You are responsible for what you post.
-- Results are still typed in or imported from CSV: pulling analytics automatically is the next integration.
+- **Automatic results have never been run against the real X API.** The request (`GET /2/tweets?ids=…&tweet.fields=public_metrics`)
+  and response fields are from memory and unit-tested against canned responses and a fake platform only, and whether reading
+  posts is allowed depends on your X API access level (a 403 stops pulling for that post and says so). LinkedIn results are
+  always typed in or imported: LinkedIn only gives post analytics to approved partner apps. Threads report only their first
+  post's numbers.
 - The demo data is entirely fictional, with a built-in pattern (stories win, product demos lag) so Performance has a
   story to tell. Its numbers say nothing about real results.
 - Draft quality has not been evaluated with the real model (no API key in the build environment): the prompt, the

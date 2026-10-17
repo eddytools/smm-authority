@@ -21,6 +21,7 @@ grep -q '^SMM_TOKEN_ENCRYPTION_KEY=.' api/.env || echo "SMM_TOKEN_ENCRYPTION_KEY
 trap 'kill 0' EXIT
 (cd api && .venv/bin/uvicorn --factory app.main:create_app --reload --port 8000) &
 (cd api && .venv/bin/python -m app.jobs.publish_due --loop 30) &   # posts scheduled posts on connected accounts (a no-op until you connect one)
+(cd api && .venv/bin/python -m app.jobs.pull_metrics --loop 3600) &   # reads results for posts published to X (a no-op until X is connected)
 (cd dashboard && npm run dev -- --host localhost --port 5173) &
 echo
 echo "  Dashboard: http://localhost:5173    API docs: http://localhost:8000/docs"

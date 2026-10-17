@@ -174,6 +174,18 @@ export interface Metrics {
   leads: number;
 }
 
+export interface AutoStatus {
+  supported: boolean;
+  connected: boolean;
+  published_here: boolean;
+  source: string | null;
+  last_pulled_at: string | null;
+  error: string | null;
+  pulls_done: number;
+  pulls_total: number;
+  next_pull_at: string | null;
+}
+
 export interface Group {
   key: string;
   label: string;
@@ -503,7 +515,9 @@ export const api = {
 
   getInsights: (vid: number, days: number, mix?: Record<Stage, number>) =>
     request<Insights>(`/ventures/${vid}/insights?days=${days}${mix ? `&tofu=${mix.tofu}&mofu=${mix.mofu}&bofu=${mix.bofu}` : ""}`),
-  getMetrics: (vid: number, slotId: number) => request<(Metrics & { slot_id: number }) | null>(`/ventures/${vid}/plan/slots/${slotId}/metrics`),
+  getMetrics: (vid: number, slotId: number) => request<(Metrics & { slot_id: number; source: string }) | null>(`/ventures/${vid}/plan/slots/${slotId}/metrics`),
+  getMetricsAuto: (vid: number, slotId: number) => request<AutoStatus>(`/ventures/${vid}/plan/slots/${slotId}/metrics/auto`),
+  refreshMetrics: (vid: number, slotId: number) => request<Metrics & { source: string }>(`/ventures/${vid}/plan/slots/${slotId}/metrics/refresh`, { method: "POST" }),
   saveMetrics: (vid: number, slotId: number, data: Metrics) => request<Metrics>(`/ventures/${vid}/plan/slots/${slotId}/metrics`, json("PUT", data)),
   importMetrics: (vid: number, csv: string) => request<ImportResult>(`/ventures/${vid}/metrics/import`, json("POST", { csv })),
 

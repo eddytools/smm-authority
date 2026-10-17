@@ -178,6 +178,8 @@ class FakeProvider:
         self.platform, self.label, self.uses_pkce, self.configured = platform, platform.title(), pkce, True
         self.published, self.exchanged, self.refreshed, self.errors = [], [], [], []
         self.refresh_result, self.refresh_error = None, None
+        self.metrics_supported = pkce  # X-like fakes can report numbers, LinkedIn-like ones can't
+        self.metric_calls, self.metric_results, self.metric_errors = [], {}, []
 
     def authorize_url(self, redirect_uri, state, code_challenge):
         return f"https://fake.example/{self.platform}/authorize?state={state}&redirect_uri={redirect_uri}&cc={code_challenge}"
@@ -209,6 +211,16 @@ class FakeProvider:
             raise self.errors.pop(0)
         n = len(self.published)
         return PostResult(f"post-{n}", f"https://fake.example/{self.platform}/post/{n}")
+
+
+def _fetch_metrics(self, token, ids):
+    self.metric_calls.append((token, list(ids)))
+    if self.metric_errors:
+        raise self.metric_errors.pop(0)
+    return {i: self.metric_results.get(i) for i in ids}
+
+
+FakeProvider.fetch_metrics = _fetch_metrics
 
 
 @pytest.fixture

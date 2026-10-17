@@ -21,9 +21,9 @@ from app.http import HttpResponse, http_request
 class ProviderError(Exception):
     """transient: worth retrying later. reauth: the stored authorisation no longer works, the user must reconnect."""
 
-    def __init__(self, message: str, *, transient: bool = False, reauth: bool = False):
+    def __init__(self, message: str, *, transient: bool = False, reauth: bool = False, status: int | None = None):
         super().__init__(message)
-        self.message, self.transient, self.reauth = message, transient, reauth
+        self.message, self.transient, self.reauth, self.status = message, transient, reauth, status
 
 
 class PartialPublishError(ProviderError):
@@ -77,10 +77,10 @@ def _raise_for(resp: HttpResponse, what: str) -> None:
         return
     detail = _body_message(resp)
     if resp.status == 401:
-        raise ProviderError(f"{what}: the connection was rejected (401). Reconnect the account.", reauth=True)
+        raise ProviderError(f"{what}: the connection was rejected (401). Reconnect the account.", reauth=True, status=401)
     if resp.status == 429 or resp.status >= 500:
-        raise ProviderError(f"{what}: the platform is busy or rate-limiting ({resp.status}). {detail}".strip(), transient=True)
-    raise ProviderError(f"{what}: {resp.status} {detail}".strip())
+        raise ProviderError(f"{what}: the platform is busy or rate-limiting ({resp.status}). {detail}".strip(), transient=True, status=resp.status)
+    raise ProviderError(f"{what}: {resp.status} {detail}".strip(), status=resp.status)
 
 
 def _call(http, method: str, url: str, what: str, **kw) -> HttpResponse:
@@ -117,6 +117,8 @@ class LinkedIn:
     label = "LinkedIn"
     uses_pkce = False
     scope = "openid profile w_member_social"
+    # LinkedIn only lets approved partner apps read post analytics, so results for LinkedIn posts are entered by hand.
+    metrics_supported = False
 
     def __init__(self, client_id: str | None, client_secret: str | None, api_version: str, http=http_request):
         self.client_id, self.client_secret, self.api_version, self.http = client_id, client_secret, api_version, http
@@ -171,6 +173,7 @@ class X:
     label = "X"
     uses_pkce = True
     scope = "tweet.read tweet.write users.read offline.access"
+    metrics_supported = True
 
     def __init__(self, client_id: str | None, client_secret: str | None, http=http_request):
         self.client_id, self.client_secret, self.http = client_id, client_secret, http
@@ -225,3 +228,29 @@ class X:
             first_id = first_id or tweet_id
             reply_to = tweet_id
         return PostResult(first_id, f"https://x.com/{username}/status/{first_id}")
+
+    def fetch_metrics(self, access_token: str, ids: list[str]) -> dict[str, dict[str, int] | None]:
+        """Public counts for up to 100 posts in one call. A post that no longer exists maps to None. Only the numbers X
+        actually returns are included (impressions may be absent), so callers never overwrite a field with a guess.
+        The request/response shape (GET /2/tweets?ids=…&tweet.fields=public_metrics) is from memory, not verified live,
+        and reading posts depends on the app's X API access level."""
+        query = urlencode({"ids": ",".join(ids), "tweet.fields": "public_metrics"}, safe=",")
+        data = _call(self.http, "GET", f"https://api.x.com/2/tweets?{query}", "X post numbers", headers={"Authorization": f"Bearer {access_token}"}).json()
+        if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
+            raise ProviderError("X post numbers: unexpected response from the platform.")
+        out: dict[str, dict[str, int] | None] = {i: None for i in ids}
+
+        def count(m: dict, key: str) -> int | None:
+            v = m.get(key)
+            return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+        for tweet in data.get("data", []):
+            if not isinstance(tweet, dict) or str(tweet.get("id")) not in out or not isinstance(tweet.get("public_metrics"), dict):
+                continue
+            m = tweet["public_metrics"]
+            values = {"impressions": count(m, "impression_count"), "reactions": count(m, "like_count"), "comments": count(m, "reply_count"), "saves": count(m, "bookmark_count")}
+            retweets, quotes = count(m, "retweet_count"), count(m, "quote_count")
+            if retweets is not None or quotes is not None:
+                values["shares"] = (retweets or 0) + (quotes or 0)
+            out[str(tweet["id"])] = {k: v for k, v in values.items() if v is not None}
+        return out

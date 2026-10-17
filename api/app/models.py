@@ -262,6 +262,10 @@ class PlanSlot(Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
     publish_error: Mapped[str | None] = mapped_column(String(500), default=None)
     claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)  # set while a worker is posting it
+    # Automatic results pull (see app/analytics.py): how many scheduled pulls have happened, the last one, and why it stopped
+    metrics_pull_count: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_pulled_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=None)
+    metrics_error: Mapped[str | None] = mapped_column(String(300), default=None)
 
     metric: Mapped["PostMetric | None"] = relationship(back_populates="slot", uselist=False, cascade="all, delete-orphan", passive_deletes=True, lazy="joined")
 
@@ -284,8 +288,8 @@ class PlanSlot(Base):
 
 
 class PostMetric(Base):
-    """Results for one published post (one row per post, updated in place). Entered by hand or imported from CSV
-    until platform analytics APIs are connected."""
+    """Results for one published post (one row per post, updated in place). Entered by hand, imported from CSV, or
+    pulled from the platform where it allows that (X)."""
 
     __tablename__ = "post_metrics"
 
@@ -299,7 +303,7 @@ class PostMetric(Base):
     clicks: Mapped[int] = mapped_column(Integer, default=0)
     follows: Mapped[int] = mapped_column(Integer, default=0)
     leads: Mapped[int] = mapped_column(Integer, default=0)  # leads the author attributes to this post
-    source: Mapped[str] = mapped_column(String(10), default="manual")  # "manual" | "csv"
+    source: Mapped[str] = mapped_column(String(10), default="manual")  # "manual" | "csv" | "auto" (pulled from the platform)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
