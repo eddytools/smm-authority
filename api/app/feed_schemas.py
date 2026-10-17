@@ -23,7 +23,7 @@ class SourceCreate(BaseModel):
     def _normalise_target(self):
         t = self.target
         if self.type == SourceType.manual:
-            raise ValueError("Manual sources are created by adding an influencer")
+            raise ValueError("Manual sources are created by adding an influencer or a community")
         if self.type == SourceType.rss:
             try:
                 url = _check_url(t)

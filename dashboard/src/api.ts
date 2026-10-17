@@ -270,6 +270,42 @@ export interface Digest {
   note: string | null;
 }
 
+export type CommunityPlatform = "linkedin" | "facebook" | "slack" | "discord" | "reddit" | "other";
+export interface Community {
+  id: number;
+  name: string;
+  platform: CommunityPlatform;
+  url: string | null;
+  notes: string | null;
+  enabled: boolean;
+  posts_30d: number;
+  median_engagement: number | null;
+  last_post_at: string | null;
+}
+export type Trend = "rising" | "steady" | "cooling" | "new" | "unknown";
+export interface HeatTopic {
+  term: string;
+  posts: number;
+  communities: string[];
+  engagement: number;
+  avg_relative: number;
+  heat: number;
+  trend: Trend;
+  in_niche: boolean;
+  covered: boolean;
+  example: { title: string; url: string; community: string; engagement: number };
+}
+export interface Heat {
+  days: number;
+  posts: number;
+  has_baseline: boolean;
+  topics: HeatTopic[];
+  gaps: string[];
+  hot_posts: { title: string; url: string; community: string; engagement: number; relative: number }[];
+  communities: { community: string; posts: number; median_engagement: number; top_engagement: number }[];
+  note: string | null;
+}
+
 export interface ImportResult {
   imported: number;
   errors: { row: number; message: string }[];
@@ -435,6 +471,14 @@ export const api = {
   addInfluencerPost: (vid: number, id: number, data: { url: string; text: string; engagement: number }) =>
     request<{ id: number }>(`/ventures/${vid}/influencers/${id}/posts`, json("POST", data)),
   getDigest: (vid: number, days = 14) => request<Digest>(`/ventures/${vid}/influencers/digest?days=${days}`),
+  listCommunities: (vid: number) => request<Community[]>(`/ventures/${vid}/communities`),
+  addCommunity: (vid: number, data: { name: string; platform: CommunityPlatform; url?: string; notes?: string }) =>
+    request<Community>(`/ventures/${vid}/communities`, json("POST", data)),
+  updateCommunity: (vid: number, id: number, data: { enabled?: boolean }) => request<Community>(`/ventures/${vid}/communities/${id}`, json("PATCH", data)),
+  deleteCommunity: (vid: number, id: number) => request<void>(`/ventures/${vid}/communities/${id}`, { method: "DELETE" }),
+  addCommunityPost: (vid: number, id: number, data: { url: string; text: string; likes: number; comments: number }) =>
+    request<{ id: number }>(`/ventures/${vid}/communities/${id}/posts`, json("POST", data)),
+  getHeat: (vid: number, days = 14) => request<Heat>(`/ventures/${vid}/communities/heat?days=${days}`),
   deleteSlot: (vid: number, id: number) => request<void>(`/ventures/${vid}/plan/slots/${id}`, { method: "DELETE" }),
 
   getInsights: (vid: number, days: number, mix?: Record<Stage, number>) =>

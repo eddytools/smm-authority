@@ -12,10 +12,13 @@ from app.jobs.scoring import keywords
 MIN_POSTS = 2
 MIN_VOICES = 2
 MAX_TOPICS = 10
-GENERIC = frozenset("thing things people year years time times today really great good best work works working think back first still".split())
+GENERIC = frozenset(
+    "thing things people year years time times today really great good best work works working think back first still "
+    "anyone down format cost thoughts question questions tips worth getting want keep some something".split()
+)
 
 
-def _stem(word: str) -> str:
+def stem(word: str) -> str:
     # Merge trivial plurals ("leads"/"lead") without a stemming library; deliberately crude.
     if len(word) > 4 and word.endswith("ies"):
         return word[:-3] + "y"
@@ -25,7 +28,7 @@ def _stem(word: str) -> str:
 
 
 def terms(*texts: str | None) -> set[str]:
-    return {t for t in (_stem(w) for w in keywords(*texts)) if t not in GENERIC}
+    return {t for t in (stem(w) for w in keywords(*texts)) if t not in GENERIC}
 
 
 def _blob(*texts: str | None) -> str:
@@ -40,7 +43,7 @@ def build_digest(posts: list[dict], own_texts: list[str], niche_terms: set[str],
         for t in terms(p["title"], p["summary"]):
             by_term[t].append(p)
     own = terms(*own_texts)
-    niche = {_stem(t) for t in niche_terms}
+    niche = {stem(t) for t in niche_terms}
 
     topics = []
     for term, ps in by_term.items():

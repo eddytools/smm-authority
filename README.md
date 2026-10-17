@@ -60,7 +60,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Post editor](docs/screenshots/05-post-editor.png) **Post editor and pipeline** | ![Performance](docs/screenshots/06-performance.png) **Performance** |
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
 | ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | ![Mix suggestion](docs/screenshots/13-mix-suggestion.png) **Planner: funnel mix suggested from results** |
-| ![Influencer watch](docs/screenshots/14-influencer-watch.png) **Influencer watch: topics several voices are discussing** | |
+| ![Influencer watch](docs/screenshots/14-influencer-watch.png) **Influencer watch: topics several voices are discussing** | ![Community heat](docs/screenshots/15-community-heat.png) **Community heat: rising and cooling topics** |
 
 ## API overview
 
@@ -86,6 +86,10 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | PATCH/DELETE | `/ventures/{id}/influencers/{id}` | owner or admin |
 | POST | `/ventures/{id}/influencers/{id}/posts` (paste a post) | owner or admin |
 | GET | `/ventures/{id}/influencers/digest` (`days`) | owner or admin |
+| GET/POST | `/ventures/{id}/communities` | owner or admin |
+| PATCH/DELETE | `/ventures/{id}/communities/{id}` | owner or admin |
+| POST | `/ventures/{id}/communities/{id}/posts` (paste a post: likes + comments) | owner or admin |
+| GET | `/ventures/{id}/communities/heat` (`days`) | owner or admin |
 | GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
 | GET / PUT | `/ventures/{id}/plan/slots/{slot}/metrics` | owner or admin |
 | POST | `/ventures/{id}/metrics/import` (CSV in JSON body) | owner or admin |
@@ -201,6 +205,24 @@ planner (you write the post yourself). Removing an influencer also removes their
 
 Limits: 25 influencers per venture; topics are single words (crudely merged plurals, no phrases or synonyms), so a word like
 "offer" can show up without meaning much; pasted posts and their numbers are only as accurate as what you type.
+
+## Community heat
+
+Which topics are getting likes and comments in the places your audience gathers. **Subreddits** are read automatically (add one as
+a Reddit source on the trend feed; engagement is upvotes + comments). **Groups** on LinkedIn, Facebook, Slack or Discord can't be
+read automatically, so you add the group and paste in posts you notice with their likes and comments, as with influencers.
+
+The page (`app/heat.py`, plain code, not AI) turns that into:
+- **Topics by heat.** A word counts as a topic once it appears in 2+ posts. A post's heat is how far it beat *its own community's*
+  typical (median) post, so a small group and a huge subreddit are compared fairly; a topic's heat adds that up.
+- **Trend.** The window (7/14/30 days) is compared with the same-length period before it: rising (1.5x or more), cooling (0.5x or
+  less), steady, or new. With no earlier posts at all no trend is claimed.
+- **Posts that beat their community's usual** (1.5x its median or more), each with the multiple.
+- Whether you've covered a topic in your own plan, and a "Plan my take" button, as in influencer watch.
+
+Limits: topics are single words (so some filler words like "stopped" or "looking" slip through); a small sample is flagged under
+10 posts; Reddit's hot listing is a snapshot at fetch time, so engagement on older posts is only as fresh as the last refresh;
+pasted numbers are only as accurate as what you type. 15 groups per venture.
 
 ## Publishing to LinkedIn and X
 

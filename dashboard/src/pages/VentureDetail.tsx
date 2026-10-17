@@ -104,6 +104,10 @@ export default function VentureDetail() {
           <h4>Influencer watch</h4>
           <p className="muted small">Follow the voices in your niche and see what they're all talking about.</p>
         </Link>
+        <Link to={`/ventures/${venture.id}/communities`} className="card linkcard">
+          <h4>Community heat</h4>
+          <p className="muted small">Which topics are getting likes and comments in the groups your audience is in.</p>
+        </Link>
         <Link to={`/ventures/${venture.id}/replies`} className="card linkcard">
           <h4>Quick replies</h4>
           <p className="muted small">Helpful answers to questions in communities, drafted for you to post yourself.</p>

@@ -28,7 +28,7 @@ router = APIRouter(prefix="/ventures/{venture_id}", tags=["trend feed"])
 
 def _get_source(db, venture_id: int, source_id: int) -> Source:
     source = db.get(Source, source_id)
-    if source is None or source.venture_id != venture_id or source.influencer is not None:  # influencer sources are managed with the influencer
+    if source is None or source.venture_id != venture_id or source.is_managed:  # influencer and community sources are managed with them
         raise HTTPException(404, "Source not found")
     return source
 
@@ -38,7 +38,7 @@ def _get_source(db, venture_id: int, source_id: int) -> Source:
 @router.get("/sources", response_model=list[SourceOut])
 def list_sources(venture_id: int, user: CurrentUser, db: DbSession):
     get_accessible_venture(db, venture_id, user)
-    return [src for src in db.scalars(select(Source).where(Source.venture_id == venture_id).order_by(Source.id)).unique().all() if src.influencer is None]
+    return [src for src in db.scalars(select(Source).where(Source.venture_id == venture_id).order_by(Source.id)).unique().all() if not src.is_managed]
 
 
 @router.post("/sources", response_model=SourceOut, status_code=201)

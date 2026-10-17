@@ -172,3 +172,5 @@ ul.plain li { padding: .55rem 0; border-top: 1px solid var(--border); }
 ul.plain li:first-child { border-top: 0; }
 .stack { display: flex; flex-direction: column; gap: .6rem; margin-top: .75rem; }
 .influencer { padding: .6rem 0; border-top: 1px solid var(--border); }
+.badge.trend-rising { background: var(--ok-bg); color: var(--brand); }
+.badge.trend-cooling { color: var(--danger); }

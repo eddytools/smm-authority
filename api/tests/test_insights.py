@@ -131,11 +131,20 @@ def test_demo_seed_builds_a_complete_venture_and_a_readable_story(tmp_path):
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(User).where(User.email == DEMO_EMAIL)) == 1
         assert db.scalar(select(func.count()).select_from(BriefVersion)) == 1
-        assert db.scalar(select(func.count()).select_from(FeedItem)) == 15  # 10 trend items + 5 influencer posts
+        assert db.scalar(select(func.count()).select_from(FeedItem)) == 26  # 10 trend items + 5 influencer posts + 11 group posts
         from app.influence import terms
 
         posts = db.execute(select(FeedItem).join(Influencer, Influencer.source_id == FeedItem.source_id)).scalars().all()
         assert len(posts) == 5 and any("webinar" in terms(p.title, p.summary) for p in posts)
+        from app.heat import build_heat
+        from app.models import Community, Source
+
+        group_posts = db.execute(select(FeedItem).join(Community, Community.source_id == FeedItem.source_id)).scalars().all()
+        reddit_posts = db.execute(select(FeedItem, Source).join(Source, Source.id == FeedItem.source_id).where(Source.type == "reddit")).all()
+        heat_rows = [{"community": "g", "title": p.title, "summary": p.summary, "url": p.url, "engagement": p.engagement, "published_at": p.published_at} for p in group_posts]
+        heat_rows += [{"community": "r", "title": p.title, "summary": p.summary, "url": p.url, "engagement": p.engagement, "published_at": p.published_at} for p, _ in reddit_posts]
+        topics = {t["term"]: t["trend"] for t in build_heat(heat_rows, [], set(), datetime.now(timezone.utc), 14)["topics"]}
+        assert topics.get("webinar") == "rising" and topics.get("paid") == "cooling"
         slots = db.scalars(select(PlanSlot)).unique().all()
         assert len(slots) > 40 and db.scalar(select(func.count()).select_from(PostMetric)) >= 15
         rows = [

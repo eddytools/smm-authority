@@ -138,6 +138,12 @@ class Source(Base):
     venture: Mapped[Venture] = relationship(back_populates="sources")
     items: Mapped[list["FeedItem"]] = relationship(back_populates="source", cascade="all, delete-orphan", passive_deletes=True)
     influencer: Mapped["Influencer | None"] = relationship(back_populates="source", lazy="joined", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
+    community: Mapped["Community | None"] = relationship(back_populates="source", lazy="joined", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
+
+    @property
+    def is_managed(self) -> bool:
+        """Created and edited through an influencer or community rather than the Sources list."""
+        return self.influencer is not None or self.community is not None
 
 
 class Influencer(Base):
@@ -157,6 +163,25 @@ class Influencer(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     source: Mapped[Source] = relationship(back_populates="influencer")
+
+
+class Community(Base):
+    """A group the venture's audience hangs out in whose posts are pasted in by hand (LinkedIn/Facebook groups, Slack or
+    Discord communities). Subreddits don't need one: they are read automatically through a Reddit source."""
+
+    __tablename__ = "communities"
+    __table_args__ = (UniqueConstraint("venture_id", "name", name="uq_community_venture_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venture_id: Mapped[int] = mapped_column(ForeignKey("ventures.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id", ondelete="CASCADE"), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    platform: Mapped[str] = mapped_column(String(20))
+    url: Mapped[str | None] = mapped_column(String(500), default=None)
+    notes: Mapped[str | None] = mapped_column(String(300), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    source: Mapped[Source] = relationship(back_populates="community")
 
 
 class ItemStatus(str, enum.Enum):

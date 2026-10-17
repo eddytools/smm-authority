@@ -17,7 +17,7 @@ from app.db import make_engine, prepare_schema
 from app.framework import DEFAULT_MIX, SlotStatus
 from app.jobs.scoring import brief_keywords, rule_score
 from app.feed_parsers import url_hash
-from app.models import BriefVersion, FeedItem, Influencer, ItemStatus, PlanSlot, PostMetric, Role, Source, SourceType, User, Venture
+from app.models import BriefVersion, Community, FeedItem, Influencer, ItemStatus, PlanSlot, PostMetric, Role, Source, SourceType, User, Venture
 from app.planner import Candidate, generate
 from app.security import hash_password
 
@@ -34,6 +34,20 @@ INFLUENCERS = [
         ("Thread: why your LinkedIn posts never turn into leads", "Posting is not the problem. A clear offer and a webinar-style follow-up is. Pricing clarity helps too.", 1, 320),
     ]),
 ]
+COMMUNITY = ("B2B SaaS Founders (fictional group)", "linkedin", [
+    # (title, text, days ago, likes + comments): "webinar" heats up lately, "paid" ads cool down
+    ("Anyone running webinars for pipeline?", "Thinking of starting webinars to generate inbound leads. What format works?", 1, 84),
+    ("Our webinar got 3x the demos of cold email", "Switched from cold outreach to a monthly webinar. Inbound leads up, cost per lead down.", 3, 61),
+    ("Webinar tool recommendations?", "Looking for a simple webinar platform that doesn't need a sales call.", 5, 38),
+    ("How do you price a small SaaS?", "Pricing page question: show prices or hide them behind a demo?", 4, 22),
+    ("Is anyone still doing paid LinkedIn ads?", "Paid ads costs keep climbing. Worth it for a small SaaS?", 2, 9),
+    ("Paid ads fatigue is real", "Our paid ads stopped converting this month.", 6, 6),
+    ("Paid LinkedIn ads: our results", "We spent on paid ads for a quarter. Here is what we learned.", 17, 72),
+    ("Paid ads vs organic for a SaaS launch", "Debating paid ads versus building an audience first.", 19, 95),
+    ("Paid ads creative that worked", "Sharing the paid ad creative that got clicks.", 23, 58),
+    ("Webinar idea for SaaS founders", "Planning a webinar on inbound leads, any tips?", 21, 9),
+    ("Pricing page teardown thread", "Let's tear down each other's pricing pages.", 12, 30),
+])
 DEMO_EMAIL, DEMO_PASSWORD = "demo@example.com", "demo-password-1"
 
 BRIEF = {
@@ -137,6 +151,16 @@ def seed(session_factory, reset: bool = False, now: datetime | None = None) -> s
                 published = now - timedelta(days=days)
                 db.add(FeedItem(venture_id=v.id, source_id=src.id, url=url, url_hash=url_hash(url), title=title, summary=text, author=name, published_at=published, fetched_at=now,
                                 engagement=eng, rule_score=rule_score(title, text, published, eng, kws, now)))
+
+        cname, cplatform, cposts = COMMUNITY
+        csrc = Source(venture_id=v.id, type=SourceType.manual, target="community:demo-group", label=cname)
+        db.add(Community(venture_id=v.id, name=cname, platform=cplatform, notes="Where my ideal customers ask questions", source=csrc))
+        db.flush()
+        for j, (title, text, days, eng) in enumerate(cposts):
+            url = f"https://example.com/demo-group/{j}"
+            published = now - timedelta(days=days)
+            db.add(FeedItem(venture_id=v.id, source_id=csrc.id, url=url, url_hash=url_hash(url), title=title, summary=text, published_at=published, fetched_at=now,
+                            engagement=eng, rule_score=rule_score(title, text, published, eng, kws, now)))
 
         tz = ZoneInfo("UTC")
         today = now.date()
