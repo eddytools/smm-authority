@@ -159,6 +159,7 @@ class Influencer(Base):
     name: Mapped[str] = mapped_column(String(120))
     platform: Mapped[str] = mapped_column(String(20))
     profile_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), default=None)  # a profile picture link the user pasted (platforms don't let us fetch it)
     notes: Mapped[str | None] = mapped_column(String(300), default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
@@ -220,6 +221,12 @@ class FeedItem(Base):
     @property
     def source_type(self) -> str:
         return self.source.type.value
+
+    @property
+    def icon_type(self) -> str:
+        """Which icon to draw: the influencer's or group's platform, else the kind of source."""
+        src = self.source
+        return src.influencer.platform if src.influencer else src.community.platform if src.community else src.type.value
 
     @property
     def influencer_name(self) -> str | None:

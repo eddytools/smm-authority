@@ -63,7 +63,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | ![Publishing](docs/screenshots/09-publishing.png) **Publishing: connect accounts** | ![Auto-post](docs/screenshots/10-planner-auto-post.png) **A scheduled post that will go out automatically** |
 | ![Quick replies](docs/screenshots/12-quick-replies.png) **Quick replies: safeguards flagging a pitchy draft** | ![Mix suggestion](docs/screenshots/13-mix-suggestion.png) **Planner: funnel mix suggested from results** |
 | ![Influencer watch](docs/screenshots/14-influencer-watch.png) **Influencer watch: topics several voices are discussing** | ![Community heat](docs/screenshots/15-community-heat.png) **Community heat: rising and cooling topics** |
-| ![Top posts](docs/screenshots/16-top-posts.png) **Why top posts win: shared patterns** | |
+| ![Top posts](docs/screenshots/16-top-posts.png) **Why top posts win: shared patterns** | ![Today](docs/screenshots/18-today.png) **Today: the daily summary** |
 
 ## API overview
 
@@ -94,6 +94,7 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | POST | `/ventures/{id}/communities/{id}/posts` (paste a post: likes + comments) | owner or admin |
 | GET | `/ventures/{id}/communities/heat` (`days`) | owner or admin |
 | GET | `/ventures/{id}/top-posts` (`days`) | owner or admin |
+| GET | `/ventures/{id}/today` (`tz`) | owner or admin |
 | GET | `/ventures/{id}/plan/slots/{id}/metrics/auto` (is this post's data automatic, next pull) | owner or admin |
 | POST | `/ventures/{id}/plan/slots/{id}/metrics/refresh` (read it from the platform now) | owner or admin |
 | GET | `/ventures/{id}/insights` (`days`, optional `tofu`/`mofu`/`bofu` = the mix you plan with) | owner or admin |
@@ -108,6 +109,29 @@ Tests: `cd api && .venv/bin/python -m pytest` and `cd dashboard && npm run build
 | GET/POST | `/users` | admin |
 | GET/PATCH | `/users/{id}` | admin |
 | GET | `/health` | public |
+
+## Today (the daily summary)
+
+Opening a venture lands on **Today**, one page that reads what the scheduled jobs already collected (no AI, no outside calls of
+its own; `GET /ventures/{id}/today`, code in `app/today.py` and `app/routers/today.py`):
+
+- **Stat tiles with progress:** items fetched in the last 24 hours with a 7-day bar chart, how many sources are healthy (progress bar,
+  failing and stale counts), items waiting for review, and this week's published-of-planned progress. Missed posts get a warning tile.
+- **What's trending:** the best-ranked items from the last 3 days, each with a source icon and match score, plus rising topics from
+  your communities.
+- **What influencers are writing:** each person with their picture (or coloured initials) and platform badge, their latest post, posts
+  this week, and the topics several of them share.
+- **Suggested for you:** topics several influencers or communities are covering that aren't in your plan (one click to "Plan my
+  take"), ideas due soon that still need a draft, questions worth answering, and saved items you haven't planned. A new venture
+  gets setup steps instead.
+- **My calendar:** the next 7 days in your timezone with platform icons, status and auto-post marks, today highlighted.
+- **Fetched details:** every source with its icon, health (fetched, failed with the error, not fetched in 24h, paused, or pasted
+  by you), time of last update and counts. **Fetch now** runs the same refresh the scheduler does.
+
+Source icons are small original glyphs on coloured tiles, not the brands' logos. **Influencer pictures:** LinkedIn and X don't let
+the app read profile pictures, so you paste a picture link (https only) with the **Picture** button or when following someone;
+without one the dashboard shows initials. Pictures load straight from the link you gave, so only use images you're happy to
+have fetched from that address. The old venture page, with the authority-setup editor, is now under **Setup**.
 
 ## Authority setup (per venture)
 

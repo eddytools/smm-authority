@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Avatar } from "../components/Icons";
 import { api, type Digest, type Influencer, type InfluencerPlatform, type Venture } from "../api";
 
 const PLATFORMS: InfluencerPlatform[] = ["linkedin", "x", "reddit", "youtube", "blog", "newsletter", "other"];
@@ -13,7 +14,7 @@ const tomorrow9 = () => {
   d.setHours(9, 0, 0, 0);
   return d.toISOString();
 };
-const blank = { name: "", platform: "linkedin" as InfluencerPlatform, profile_url: "", feed_url: "", notes: "" };
+const blank = { name: "", platform: "linkedin" as InfluencerPlatform, profile_url: "", avatar_url: "", feed_url: "", notes: "" };
 
 export default function VentureInfluencers() {
   const vid = Number(useParams().id);
@@ -60,6 +61,7 @@ export default function VentureInfluencers() {
         name: form.name,
         platform: form.platform,
         ...(form.profile_url.trim() && { profile_url: form.profile_url.trim() }),
+        ...(form.avatar_url.trim() && { avatar_url: form.avatar_url.trim() }),
         ...(form.feed_url.trim() && { feed_url: form.feed_url.trim() }),
         ...(form.notes.trim() && { notes: form.notes.trim() }),
       });
@@ -138,6 +140,7 @@ export default function VentureInfluencers() {
         {list?.map((i) => (
           <div key={i.id} className="influencer">
             <div className="meta">
+              <Avatar name={i.name} url={i.avatar_url} platform={i.platform} size={38} />
               <strong>{i.profile_url ? <a href={i.profile_url} target="_blank" rel="noreferrer noopener">{i.name}</a> : i.name}</strong>
               <span className="badge">{i.platform}</span>
               {!i.enabled && <span className="badge">paused</span>}
@@ -148,6 +151,16 @@ export default function VentureInfluencers() {
               </span>
               <span className="spacer" />
               <button className="ghost" onClick={() => setPasting(pasting === i.id ? null : i.id)}>Paste a post</button>
+              <button
+                className="ghost"
+                disabled={busy}
+                onClick={() => {
+                  const url = window.prompt("Link to their profile picture (must start with https://):", i.avatar_url ?? "");
+                  if (url !== null && url.trim()) void run(async () => void (await api.updateInfluencer(vid, i.id, { avatar_url: url.trim() })));
+                }}
+              >
+                Picture
+              </button>
               <button className="ghost" disabled={busy} onClick={() => run(async () => void (await api.updateInfluencer(vid, i.id, { enabled: !i.enabled })))}>{i.enabled ? "Pause" : "Resume"}</button>
               <button
                 className="ghost danger"
@@ -196,6 +209,10 @@ export default function VentureInfluencers() {
           <label>
             Profile link (optional)
             <input value={form.profile_url} onChange={(e) => setForm({ ...form, profile_url: e.target.value })} placeholder="https://" />
+          </label>
+          <label>
+            Profile picture link (optional, https://)
+            <input value={form.avatar_url} onChange={(e) => setForm({ ...form, avatar_url: e.target.value })} placeholder="https://" />
           </label>
           <label>
             Feed link, if they have one (optional)

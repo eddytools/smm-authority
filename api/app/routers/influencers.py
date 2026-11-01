@@ -33,7 +33,7 @@ def _out(db, inf: Influencer) -> InfluencerOut:
     last = db.scalar(select(func.max(FeedItem.published_at)).where(FeedItem.source_id == inf.source_id))
     src = inf.source
     return InfluencerOut(
-        id=inf.id, name=inf.name, platform=inf.platform, profile_url=inf.profile_url, notes=inf.notes, source_id=src.id,
+        id=inf.id, name=inf.name, platform=inf.platform, profile_url=inf.profile_url, avatar_url=inf.avatar_url, notes=inf.notes, source_id=src.id,
         feed_url=src.target if src.type == SourceType.rss else None, enabled=src.enabled,
         posts_30d=count, avg_engagement=round(float(avg), 1) if avg is not None else None, last_post_at=last,
         last_status=src.last_status, last_error=src.last_error,
@@ -61,7 +61,7 @@ def add_influencer(venture_id: int, body: InfluencerCreate, user: CurrentUser, d
         source = Source(venture_id=venture_id, type=SourceType.rss, target=body.feed_url, label=body.name)
     else:
         source = Source(venture_id=venture_id, type=SourceType.manual, target=f"influencer:{secrets.token_hex(6)}", label=body.name)
-    inf = Influencer(venture_id=venture_id, name=body.name, platform=body.platform, profile_url=body.profile_url, notes=body.notes, source=source)
+    inf = Influencer(venture_id=venture_id, name=body.name, platform=body.platform, profile_url=body.profile_url, avatar_url=body.avatar_url, notes=body.notes, source=source)
     db.add(inf)
     try:
         db.commit()
@@ -73,26 +73,29 @@ def add_influencer(venture_id: int, body: InfluencerCreate, user: CurrentUser, d
     return _out(db, inf)
 
 
-@router.get("/digest")
-def digest(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=90)] = 14):
-    """What the people you follow are talking about. Deterministic: no AI is involved."""
-    venture = get_accessible_venture(db, venture_id, user)
+def influencer_digest(db, venture, days: int = 14) -> dict:
     now = datetime.now(timezone.utc)
     items = db.execute(
         select(FeedItem, Influencer)
         .join(Influencer, Influencer.source_id == FeedItem.source_id)
-        .where(FeedItem.venture_id == venture_id, FeedItem.published_at >= now - timedelta(days=days))
+        .where(FeedItem.venture_id == venture.id, FeedItem.published_at >= now - timedelta(days=days))
     ).all()
-    enabled = {i.id for i in db.scalars(select(Influencer).where(Influencer.venture_id == venture_id)).all() if i.source.enabled}
+    enabled = {i.id for i in db.scalars(select(Influencer).where(Influencer.venture_id == venture.id)).all() if i.source.enabled}
     posts = [
         {"influencer_id": inf.id, "influencer": inf.name, "title": it.title, "summary": it.summary, "url": it.url, "engagement": it.engagement, "published_at": it.published_at}
         for it, inf in items
         if inf.id in enabled
     ]
-    slots = db.scalars(select(PlanSlot).where(PlanSlot.venture_id == venture_id, PlanSlot.scheduled_at >= now - timedelta(days=60), PlanSlot.status != "skipped")).unique().all()
+    slots = db.scalars(select(PlanSlot).where(PlanSlot.venture_id == venture.id, PlanSlot.scheduled_at >= now - timedelta(days=60), PlanSlot.status != "skipped")).unique().all()
     own = [t for s in slots for t in (s.topic, s.draft)]
-    niche = brief_keywords(venture.name, venture.niche, _brief(db, venture_id))
+    niche = brief_keywords(venture.name, venture.niche, _brief(db, venture.id))
     return build_digest(posts, own, niche, now, days)
+
+
+@router.get("/digest")
+def digest(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=90)] = 14):
+    """What the people you follow are talking about. Deterministic: no AI is involved."""
+    return influencer_digest(db, get_accessible_venture(db, venture_id, user), days)
 
 
 @router.patch("/{influencer_id}", response_model=InfluencerOut)

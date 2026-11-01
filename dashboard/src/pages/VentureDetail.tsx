@@ -42,10 +42,10 @@ export default function VentureDetail() {
   return (
     <>
       <p>
-        <Link to="/">← Ventures</Link>
+        <Link to={`/ventures/${venture.id}`}>← Today</Link>
       </p>
       <div className="page-head">
-        <h2>{venture.name}</h2>
+        <h2>{venture.name}: setup</h2>
         {venture.is_archived && <span className="badge">archived</span>}
         <span className="spacer" />
         {!editing && <button onClick={() => setEditing(true)}>Edit</button>}

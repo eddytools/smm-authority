@@ -132,12 +132,14 @@ def seed(session_factory, reset: bool = False, now: datetime | None = None) -> s
             db.add(src)
             db.flush()
             sources[(st, target)] = src
+        # one feed that is failing, so the "fetched details" panel shows what a problem looks like
+        db.add(Source(venture_id=v.id, type=SourceType.rss, target="https://example.com/old-blog/feed.xml", label="Old blog (broken feed)", last_status="error", last_error="HTTP 404", last_fetched_at=now - timedelta(hours=2)))
         kws = brief_keywords(v.name, v.niche, BRIEF)
         saved_items = []
         for i, (st, target, title, summary, hours, eng) in enumerate(FEED):
             published = now - timedelta(hours=hours)
             item = FeedItem(venture_id=v.id, source_id=sources[(st, target)].id, url=f"https://example.com/demo/{i}", url_hash=f"demo{i:04d}".ljust(64, "0"), title=title,
-                            summary=summary, author="demo", published_at=published, fetched_at=now - timedelta(hours=2), engagement=eng,
+                            summary=summary, author="demo", published_at=published, fetched_at=min(now, published + timedelta(hours=1)), engagement=eng,
                             rule_score=rule_score(title, summary, published, eng, kws, now), status=ItemStatus.saved if i in (0, 4) else ItemStatus.new)
             db.add(item)
             db.flush()
@@ -151,7 +153,7 @@ def seed(session_factory, reset: bool = False, now: datetime | None = None) -> s
             for j, (title, text, days, eng) in enumerate(posts):
                 url = f"https://example.com/demo-influencers/{name.split()[0].lower()}-{j}"
                 published = now - timedelta(days=days)
-                db.add(FeedItem(venture_id=v.id, source_id=src.id, url=url, url_hash=url_hash(url), title=title, summary=text, author=name, published_at=published, fetched_at=now,
+                db.add(FeedItem(venture_id=v.id, source_id=src.id, url=url, url_hash=url_hash(url), title=title, summary=text, author=name, published_at=published, fetched_at=min(now, published + timedelta(hours=2)),
                                 engagement=eng, rule_score=rule_score(title, text, published, eng, kws, now)))
 
         cname, cplatform, cposts = COMMUNITY
@@ -161,7 +163,7 @@ def seed(session_factory, reset: bool = False, now: datetime | None = None) -> s
         for j, (title, text, days, eng) in enumerate(cposts):
             url = f"https://example.com/demo-group/{j}"
             published = now - timedelta(days=days)
-            db.add(FeedItem(venture_id=v.id, source_id=csrc.id, url=url, url_hash=url_hash(url), title=title, summary=text, published_at=published, fetched_at=now,
+            db.add(FeedItem(venture_id=v.id, source_id=csrc.id, url=url, url_hash=url_hash(url), title=title, summary=text, published_at=published, fetched_at=min(now, published + timedelta(hours=2)),
                             engagement=eng, rule_score=rule_score(title, text, published, eng, kws, now)))
 
         tz = ZoneInfo("UTC")

@@ -253,6 +253,7 @@ export interface Influencer {
   name: string;
   platform: InfluencerPlatform;
   profile_url: string | null;
+  avatar_url: string | null;
   notes: string | null;
   source_id: number;
   feed_url: string | null;
@@ -335,6 +336,51 @@ export interface TopPosts {
   patterns: TopPattern[];
   top: { title: string; url: string; community: string; engagement: number; relative: number; tags: string[] }[];
   note: string | null;
+}
+
+export type Health = "ok" | "error" | "stale" | "never" | "paused" | "manual";
+export interface TodaySlot {
+  id: number;
+  scheduled_at: string;
+  platform: string;
+  post_type: string;
+  stage: Stage;
+  topic: string;
+  status: SlotStatus;
+  locked: boolean;
+  has_draft: boolean;
+  will_auto_publish: boolean;
+}
+export interface Today {
+  generated_at: string;
+  setup: { brief: boolean; sources: boolean; influencers: boolean; plan: boolean };
+  fetch: {
+    coverage: { sources: number; ok: number; error: number; stale: number; never: number; pct: number | null };
+    items_24h: number;
+    items_7d: number;
+    unreviewed: number;
+    last_fetched_at: string | null;
+    by_day: { date: string; items: number }[];
+    sources: { id: number; type: string; icon: string; label: string; kind: "source" | "influencer" | "community"; enabled: boolean; health: Health; error: string | null; last_fetched_at: string | null; new_24h: number; items_7d: number }[];
+  };
+  trending: {
+    items: { id: number; title: string; url: string; source_type: string; icon: string; source_label: string; influencer: string | null; engagement: number; score: number; ai_scored: boolean; why: string | null; published_at: string; status: string }[];
+    topics: HeatTopic[];
+    heat_note: string | null;
+  };
+  influencers: {
+    people: { id: number; name: string; platform: string; avatar_url: string | null; profile_url: string | null; posts_7d: number; latest: { title: string; url: string; engagement: number; published_at: string } | null }[];
+    total: number;
+    topics: { term: string; posts: number; voices: number; influencers: string[]; engagement: number; in_niche: boolean; covered: boolean }[];
+    note: string | null;
+  };
+  suggestions: { kind: "topic_gap" | "draft" | "reply" | "saved" | "setup"; title: string; detail: string; term: string | null; link: string | null }[];
+  calendar: {
+    days: { date: string; is_today: boolean; slots: TodaySlot[] }[];
+    week: { planned: number; published: number; skipped: number; pct: number | null };
+    late: TodaySlot[];
+    total_upcoming: number;
+  };
 }
 
 export interface ImportResult {
@@ -495,12 +541,13 @@ export const api = {
   createSlot: (vid: number, data: { scheduled_at: string; platform: string; post_type: string; topic: string }) =>
     request<PlanSlot>(`/ventures/${vid}/plan/slots`, json("POST", data)),
   listInfluencers: (vid: number) => request<Influencer[]>(`/ventures/${vid}/influencers`),
-  addInfluencer: (vid: number, data: { name: string; platform: InfluencerPlatform; profile_url?: string; feed_url?: string; notes?: string }) =>
+  addInfluencer: (vid: number, data: { name: string; platform: InfluencerPlatform; profile_url?: string; avatar_url?: string; feed_url?: string; notes?: string }) =>
     request<Influencer>(`/ventures/${vid}/influencers`, json("POST", data)),
-  updateInfluencer: (vid: number, id: number, data: { notes?: string; enabled?: boolean }) => request<Influencer>(`/ventures/${vid}/influencers/${id}`, json("PATCH", data)),
+  updateInfluencer: (vid: number, id: number, data: { notes?: string; enabled?: boolean; avatar_url?: string }) => request<Influencer>(`/ventures/${vid}/influencers/${id}`, json("PATCH", data)),
   deleteInfluencer: (vid: number, id: number) => request<void>(`/ventures/${vid}/influencers/${id}`, { method: "DELETE" }),
   addInfluencerPost: (vid: number, id: number, data: { url: string; text: string; engagement: number }) =>
     request<{ id: number }>(`/ventures/${vid}/influencers/${id}/posts`, json("POST", data)),
+  getToday: (vid: number) => request<Today>(`/ventures/${vid}/today?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}`),
   getDigest: (vid: number, days = 14) => request<Digest>(`/ventures/${vid}/influencers/digest?days=${days}`),
   listCommunities: (vid: number) => request<Community[]>(`/ventures/${vid}/communities`),
   addCommunity: (vid: number, data: { name: string; platform: CommunityPlatform; url?: string; notes?: string }) =>

@@ -22,6 +22,13 @@ def _url(value: str | None) -> str | None:
     return url
 
 
+def _https_image(value: str | None) -> str | None:
+    url = _url(value)
+    if url is not None and not url.lower().startswith("https://"):
+        raise ValueError("The picture link must start with https://")
+    return url
+
+
 def _required_url(value: str) -> str:
     url = _url(value)
     if url is None:
@@ -34,18 +41,22 @@ class InfluencerCreate(BaseModel):
     platform: Platform
     profile_url: Annotated[str, StringConstraints(max_length=500)] | None = None
     feed_url: Annotated[str, StringConstraints(max_length=500)] | None = None  # an RSS/Atom URL, when they publish one
+    avatar_url: Annotated[str, StringConstraints(max_length=500)] | None = None  # link to their profile picture
     notes: Notes | None = None
 
     _check = field_validator("profile_url", "feed_url")(_url)
+    _check_avatar = field_validator("avatar_url")(_https_image)
 
 
 class InfluencerUpdate(BaseModel):
     name: Name | None = None
     profile_url: Annotated[str, StringConstraints(max_length=500)] | None = None
+    avatar_url: Annotated[str, StringConstraints(max_length=500)] | None = None
     notes: Notes | None = None
     enabled: bool | None = None
 
     _check = field_validator("profile_url")(_url)
+    _check_avatar = field_validator("avatar_url")(_https_image)
 
     @field_validator("name", "enabled")
     @classmethod
@@ -60,6 +71,7 @@ class InfluencerOut(ORM):
     name: str
     platform: str
     profile_url: str | None
+    avatar_url: str | None
     notes: str | None
     source_id: int
     feed_url: str | None

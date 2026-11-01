@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { SourceIcon } from "../components/Icons";
 import { api, ApiError, type FeedItem, type ItemStatus, type Source, type SourceType, type Venture } from "../api";
 
 type Tab = "new" | "saved" | "dismissed";
@@ -185,6 +186,7 @@ export default function VentureFeed() {
               ) : (
                 <span className="score rule" title="Match score (setup keywords, freshness, engagement). Use Score with AI for a sharper ranking.">{Math.round(item.rule_score)}</span>
               )}
+              <SourceIcon type={item.source_type} size={18} title={item.source_label} />
               <span>{item.influencer_name ? `★ ${item.influencer_name}` : item.source_label}</span>
               <span>{ago(item.published_at)}</span>
               {item.engagement > 0 && <span>{item.engagement} engagement</span>}

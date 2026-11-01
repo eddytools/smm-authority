@@ -42,15 +42,12 @@ def _venture_facts(venture) -> dict:
     return {"name": venture.name, "niche": venture.niche, "website": venture.website_url}
 
 
-@router.get("/opportunities", response_model=list[OpportunityOut])
-def opportunities(venture_id: int, user: CurrentUser, db: DbSession):
-    """Questions worth answering, from the trend feed: question-like, recent, lively, close to your niche. Scripted, no AI."""
-    venture = get_accessible_venture(db, venture_id, user)
+def find_opportunities(db, venture, limit: int = 10) -> list[dict]:
     now = datetime.now(timezone.utc)
-    done = {r for r in db.scalars(select(QuickReply.source_key).where(QuickReply.venture_id == venture_id, QuickReply.source_key.is_not(None)))}
+    done = {r for r in db.scalars(select(QuickReply.source_key).where(QuickReply.venture_id == venture.id, QuickReply.source_key.is_not(None)))}
     items = db.scalars(
         select(FeedItem)
-        .where(FeedItem.venture_id == venture_id, FeedItem.status != ItemStatus.dismissed, FeedItem.published_at >= now - timedelta(days=3))
+        .where(FeedItem.venture_id == venture.id, FeedItem.status != ItemStatus.dismissed, FeedItem.published_at >= now - timedelta(days=3))
         .order_by(FeedItem.published_at.desc())
         .limit(300)
     ).unique().all()
@@ -60,7 +57,13 @@ def opportunities(venture_id: int, user: CurrentUser, db: DbSession):
         for i in items
         if i.url_hash not in done and url_hash(i.url) not in done
     ]
-    return rank_opportunities(rows, now, brief_keywords(venture.name, venture.niche, _brief(db, venture_id)))
+    return rank_opportunities(rows, now, brief_keywords(venture.name, venture.niche, _brief(db, venture.id)), limit)
+
+
+@router.get("/opportunities", response_model=list[OpportunityOut])
+def opportunities(venture_id: int, user: CurrentUser, db: DbSession):
+    """Questions worth answering, from the trend feed: question-like, recent, lively, close to your niche. Scripted, no AI."""
+    return find_opportunities(db, get_accessible_venture(db, venture_id, user))
 
 
 @router.post("/draft", response_model=ReplyOut, status_code=201)

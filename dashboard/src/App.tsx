@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VentureDetail from "./pages/VentureDetail";
 import VentureFeed from "./pages/VentureFeed";
+import VentureToday from "./pages/VentureToday";
 import VentureCommunities from "./pages/VentureCommunities";
 import VentureInfluencers from "./pages/VentureInfluencers";
 import VentureTopPosts from "./pages/VentureTopPosts";
@@ -42,7 +43,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route index element={<Ventures />} />
-          <Route path="ventures/:id" element={<VentureDetail />} />
+          <Route path="ventures/:id" element={<VentureToday />} />
+          <Route path="ventures/:id/setup" element={<VentureDetail />} />
           <Route path="ventures/:id/feed" element={<VentureFeed />} />
           <Route path="ventures/:id/influencers" element={<VentureInfluencers />} />
           <Route path="ventures/:id/communities" element={<VentureCommunities />} />

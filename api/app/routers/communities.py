@@ -65,17 +65,14 @@ def add_community(venture_id: int, body: CommunityCreate, user: CurrentUser, db:
     return _out(db, c)
 
 
-@router.get("/heat")
-def heat(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=60)] = 14):
-    """What's hot in your communities (subreddits you follow plus groups you paste into). Deterministic: no AI is involved."""
-    venture = get_accessible_venture(db, venture_id, user)
+def heat_report(db, venture, days: int = 14) -> dict:
     now = datetime.now(timezone.utc)
     rows = db.execute(
         select(FeedItem, Source)
         .join(Source, Source.id == FeedItem.source_id)
         .outerjoin(Community, Community.source_id == Source.id)
         .where(
-            FeedItem.venture_id == venture_id,
+            FeedItem.venture_id == venture.id,
             FeedItem.published_at >= now - timedelta(days=2 * days),
             Source.enabled.is_(True),
             or_(Source.type == SourceType.reddit, Community.id.is_not(None)),
@@ -86,9 +83,15 @@ def heat(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int,
          "engagement": it.engagement, "published_at": it.published_at}
         for it, src in rows
     ]
-    slots = db.scalars(select(PlanSlot).where(PlanSlot.venture_id == venture_id, PlanSlot.scheduled_at >= now - timedelta(days=60), PlanSlot.status != "skipped")).unique().all()
+    slots = db.scalars(select(PlanSlot).where(PlanSlot.venture_id == venture.id, PlanSlot.scheduled_at >= now - timedelta(days=60), PlanSlot.status != "skipped")).unique().all()
     own = [t for s in slots for t in (s.topic, s.draft)]
-    return build_heat(posts, own, brief_keywords(venture.name, venture.niche, _brief(db, venture_id)), now, days)
+    return build_heat(posts, own, brief_keywords(venture.name, venture.niche, _brief(db, venture.id)), now, days)
+
+
+@router.get("/heat")
+def heat(venture_id: int, user: CurrentUser, db: DbSession, days: Annotated[int, Query(ge=7, le=60)] = 14):
+    """What's hot in your communities (subreddits you follow plus groups you paste into). Deterministic: no AI is involved."""
+    return heat_report(db, get_accessible_venture(db, venture_id, user), days)
 
 
 @router.patch("/{community_id}", response_model=CommunityOut)

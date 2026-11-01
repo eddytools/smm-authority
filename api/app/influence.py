@@ -14,7 +14,7 @@ MIN_VOICES = 2
 MAX_TOPICS = 10
 GENERIC = frozenset(
     "thing things people year years time times today really great good best work works working think back first still "
-    "anyone down format cost thoughts question questions tips worth getting want keep some something".split()
+    "anyone down format cost thoughts question questions tips worth getting want keep some something clear offer stopped looking small".split()
 )
 
 

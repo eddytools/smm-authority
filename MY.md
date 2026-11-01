@@ -19,7 +19,7 @@ You need: **Python 3.11+**, **Node 20+**, **git**.
    ```
    First run installs dependencies, creates `api/.env`, loads demo data, then starts the API (`:8000`), the post
    publisher, the results puller and the dashboard (`:5173`). Stop with `Ctrl+C`.
-3. Open **http://localhost:5173** and sign in:
+3. Open **http://localhost:5173** and sign in (opening a venture shows the **Today** summary; the setup editor is under its **Setup** button):
    - demo user: `demo@example.com` / `demo-password-1` (fictional "Acme SaaS Growth" venture)
    - admin: `admin@example.com` / `change-me-now` (from `api/.env`)
    - start from empty data instead: `./scripts/dev.sh --reset` rebuilds the demo; delete `api/smm.db` to wipe everything.
