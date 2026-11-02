@@ -13,8 +13,12 @@ echo "==> Pulling the latest code"
 as_smm git pull --ff-only
 echo "==> Updating the API"
 as_smm /opt/smm/api/.venv/bin/pip install -q -r api/requirements.txt
-echo "==> Rebuilding the dashboard"
-(cd dashboard && as_smm npm ci --no-audit --no-fund --silent && as_smm env VITE_API_URL=/api npm run build --silent)
+if [ "${SMM_SKIP_DASHBOARD_BUILD:-0}" = 1 ]; then
+  echo "==> Using the dashboard that was built and uploaded from your computer"
+else
+  echo "==> Rebuilding the dashboard"
+  (cd dashboard && as_smm npm ci --no-audit --no-fund --silent && as_smm env VITE_API_URL=/api npm run build --silent)
+fi
 chmod -R a+rX dashboard/dist
 echo "==> Restarting (the API applies database migrations on start)"
 systemctl restart smm-api smm-publish

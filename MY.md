@@ -91,6 +91,18 @@ You need: a VPS running **Ubuntu 24.04 or Debian 12**, root/sudo, ports **80 and
 7. **Let more people in** (optional): Users page -> add users. Or set `SMM_ALLOW_REGISTRATION=true` in `/etc/smm/smm.env`
    and restart to allow self sign-up.
 
+### Deploy from my computer (build locally, upload, restart)
+
+Once the server is installed, this builds the dashboard on **my computer** and updates the server in one command (needs `ssh`
+access, `rsync` and Node 20+; push your commits to GitHub first):
+```bash
+./scripts/deploy-from-local.sh                      # to root@194.164.151.203
+SERVER=root@OTHER_IP ./scripts/deploy-from-local.sh # another server
+./scripts/deploy-from-local.sh --test               # run the backend tests first
+```
+It checks everything is pushed, builds, uploads the dashboard, then runs the server's update (database backup, git pull,
+dependencies, migrations, restart, health check).
+
 ### Every day on the server
 
 | What | Command |
